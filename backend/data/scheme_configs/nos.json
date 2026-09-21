@@ -1,0 +1,143 @@
+{
+  "code": "NOS",
+  "name": "National Overseas Scholarship for ST Candidates (NOS)",
+  "short_description": "Financial assistance to meritorious Scheduled Tribe students for pursuing Master's and Ph.D. level courses abroad in prestigious global universities.",
+  "department": "Ministry of Tribal Affairs, Government of India",
+  "degree_level": "Master's / Ph.D Abroad",
+  "tenure_years": 3,
+  "stipend_amount": "Tuition fees + Annual Maintenance Allowance ($15,400 / £9,900) + Airfare",
+  "eligibility_rules": {
+    "target_category": "ST",
+    "max_annual_income": 600000,
+    "min_qualifying_percentage": 60.0,
+    "max_age": 35,
+    "eligible_degrees": ["Master's Degree", "Ph.D"],
+    "requires_unconditional_offer": true
+  },
+  "required_documents": [
+    {
+      "id": "caste_cert",
+      "name": "Scheduled Tribe (ST) Caste Certificate",
+      "required": true,
+      "description": "Authorized ST certificate proving tribal community lineage"
+    },
+    {
+      "id": "income_cert",
+      "name": "Family Income Certificate",
+      "required": true,
+      "description": "Total family income from all sources not exceeding ₹6,00,000 per annum"
+    },
+    {
+      "id": "foreign_offer_letter",
+      "name": "Unconditional Foreign University Offer Letter",
+      "required": true,
+      "description": "Offer of admission from a QS/Times top-ranked foreign institution"
+    },
+    {
+      "id": "qualifying_degree",
+      "name": "Qualifying Degree Marksheet / Certificate",
+      "required": true,
+      "description": "Minimum 60% marks or equivalent grade in Bachelor's/Master's degree"
+    },
+    {
+      "id": "passport",
+      "name": "Valid Passport Copy",
+      "required": true,
+      "description": "First and last page of valid Indian passport"
+    }
+  ],
+  "form_fields": [
+    {
+      "name": "full_name",
+      "label": "Full Name (as per Passport)",
+      "type": "text",
+      "required": true,
+      "placeholder": "e.g. Sunita Devi Soren"
+    },
+    {
+      "name": "email",
+      "label": "Email Address",
+      "type": "email",
+      "required": true,
+      "placeholder": "e.g. sunita.soren@example.com"
+    },
+    {
+      "name": "phone",
+      "label": "Mobile Number",
+      "type": "tel",
+      "required": true,
+      "placeholder": "e.g. 9811223344"
+    },
+    {
+      "name": "category",
+      "label": "Social Category",
+      "type": "select",
+      "required": true,
+      "options": ["ST", "SC", "OBC", "General"]
+    },
+    {
+      "name": "caste_certificate_no",
+      "label": "ST Certificate Number",
+      "type": "text",
+      "required": true,
+      "placeholder": "e.g. ST/OD/2022/45109"
+    },
+    {
+      "name": "applicant_age",
+      "label": "Applicant Age (in years)",
+      "type": "number",
+      "required": true,
+      "placeholder": "e.g. 27"
+    },
+    {
+      "name": "annual_family_income",
+      "label": "Annual Family Income (INR)",
+      "type": "number",
+      "required": true,
+      "placeholder": "e.g. 350000"
+    },
+    {
+      "name": "destination_country",
+      "label": "Host Country",
+      "type": "select",
+      "required": true,
+      "options": ["United Kingdom", "United States", "Germany", "Australia", "Canada", "Singapore"]
+    },
+    {
+      "name": "foreign_university",
+      "label": "Host University Name",
+      "type": "text",
+      "required": true,
+      "placeholder": "e.g. University of Edinburgh"
+    },
+    {
+      "name": "foreign_course",
+      "label": "Intended Course / Program",
+      "type": "text",
+      "required": true,
+      "placeholder": "e.g. MSc in Ecological Economics"
+    },
+    {
+      "name": "has_unconditional_offer",
+      "label": "Do you hold an unconditional offer letter?",
+      "type": "select",
+      "required": true,
+      "options": ["Yes", "No"]
+    },
+    {
+      "name": "qualifying_percentage",
+      "label": "Qualifying Degree Marks (%)",
+      "type": "number",
+      "step": "0.1",
+      "required": true,
+      "placeholder": "e.g. 68.2"
+    },
+    {
+      "name": "passport_number",
+      "label": "Passport Number",
+      "type": "text",
+      "required": true,
+      "placeholder": "e.g. Z1234567"
+    }
+  ]
+}

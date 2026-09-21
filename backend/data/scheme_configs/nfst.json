@@ -1,0 +1,129 @@
+{
+  "code": "NFST",
+  "name": "National Fellowship for Higher Education of ST Students (NFST)",
+  "short_description": "Financial assistance for Scheduled Tribe students to pursue regular and full-time M.Phil and Ph.D courses in Indian Universities / Institutes.",
+  "department": "Ministry of Tribal Affairs, Government of India",
+  "degree_level": "M.Phil / Ph.D",
+  "tenure_years": 5,
+  "stipend_amount": "₹31,000 - ₹35,000 / month + HRA & Contingency",
+  "eligibility_rules": {
+    "target_category": "ST",
+    "max_annual_income": 600000,
+    "min_qualifying_percentage": 55.0,
+    "eligible_courses": ["M.Phil", "Ph.D", "Integrated Ph.D"],
+    "max_age": null,
+    "mode_of_study": "Regular / Full-time"
+  },
+  "required_documents": [
+    {
+      "id": "caste_cert",
+      "name": "Scheduled Tribe (ST) Caste Certificate",
+      "required": true,
+      "description": "Valid ST certificate issued by competent authority (Tehsildar/SDM)"
+    },
+    {
+      "id": "income_cert",
+      "name": "Family Income Certificate",
+      "required": true,
+      "description": "Current financial year income certificate showing family income ≤ ₹6,00,000"
+    },
+    {
+      "id": "admission_letter",
+      "name": "University Admission / Registration Letter",
+      "required": true,
+      "description": "Proof of confirmed admission to regular M.Phil / Ph.D program"
+    },
+    {
+      "id": "pg_marksheet",
+      "name": "Post-Graduation Marksheet / Degree",
+      "required": true,
+      "description": "Marksheet showing minimum 55% aggregate in Master's degree"
+    },
+    {
+      "id": "id_proof",
+      "name": "Identity Proof (Aadhaar / Voter ID)",
+      "required": true,
+      "description": "Government issued photo identification"
+    }
+  ],
+  "form_fields": [
+    {
+      "name": "full_name",
+      "label": "Full Name (as per certificates)",
+      "type": "text",
+      "required": true,
+      "placeholder": "e.g. Ramesh Chandra Munda"
+    },
+    {
+      "name": "email",
+      "label": "Email Address",
+      "type": "email",
+      "required": true,
+      "placeholder": "e.g. ramesh.munda@example.edu"
+    },
+    {
+      "name": "phone",
+      "label": "Mobile Number",
+      "type": "tel",
+      "required": true,
+      "placeholder": "e.g. 9876543210"
+    },
+    {
+      "name": "category",
+      "label": "Social Category",
+      "type": "select",
+      "required": true,
+      "options": ["ST", "SC", "OBC", "General"]
+    },
+    {
+      "name": "caste_certificate_no",
+      "label": "ST Certificate Number",
+      "type": "text",
+      "required": true,
+      "placeholder": "e.g. ST/JH/2023/88921"
+    },
+    {
+      "name": "annual_family_income",
+      "label": "Annual Family Income (INR)",
+      "type": "number",
+      "required": true,
+      "placeholder": "e.g. 280000"
+    },
+    {
+      "name": "course_enrolled",
+      "label": "Course Enrolled",
+      "type": "select",
+      "required": true,
+      "options": ["Ph.D", "M.Phil", "Integrated Ph.D"]
+    },
+    {
+      "name": "university_name",
+      "label": "Institution / University Name",
+      "type": "text",
+      "required": true,
+      "placeholder": "e.g. Jawaharlal Nehru University, New Delhi"
+    },
+    {
+      "name": "research_topic",
+      "label": "Research Topic / Field of Study",
+      "type": "text",
+      "required": true,
+      "placeholder": "e.g. Tribal Ethnobotany of Chota Nagpur Plateau"
+    },
+    {
+      "name": "admission_year",
+      "label": "Year of Admission / Registration",
+      "type": "number",
+      "required": true,
+      "placeholder": "e.g. 2024"
+    },
+    {
+      "name": "pg_percentage",
+      "label": "Post-Graduation Marks (%)",
+      "type": "number",
+      "step": "0.1",
+      "required": true,
+      "placeholder": "e.g. 64.5"
+    }
+  ]
+}

@@ -59,6 +59,11 @@ class Document(Base):
     file_name = Column(String(255), nullable=False)
     file_path = Column(String(500), nullable=True)
     status = Column(String(50), default="UPLOADED")  # UPLOADED, VERIFIED, DEFICIENT
+    extracted_text = Column(Text, nullable=True)
+    ocr_status = Column(String(50), default="PENDING")
+    ocr_confidence = Column(Float, default=0.0)
+    parsed_fields = Column(Text, nullable=True)
+    failed_reason = Column(Text, nullable=True)
     uploaded_at = Column(DateTime, default=datetime.utcnow)
 
     application = relationship("Application", back_populates="documents")

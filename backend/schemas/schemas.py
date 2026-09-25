@@ -28,6 +28,11 @@ class DocumentRead(BaseModel):
     file_name: str
     file_path: Optional[str] = None
     status: str
+    extracted_text: Optional[str] = None
+    ocr_status: str = "PENDING"
+    ocr_confidence: Optional[float] = None
+    parsed_fields: Optional[Dict[str, Any]] = None
+    failed_reason: Optional[str] = None
     uploaded_at: datetime
 
     class Config:

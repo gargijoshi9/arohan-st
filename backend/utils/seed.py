@@ -69,6 +69,7 @@ def seed_demo_applications(db: Session):
         "phone": "9876543210",
         "category": "ST",
         "caste_certificate_no": "ST/JH/2023/88921",
+        "annual_family_income": 280000,
         "course_enrolled": "Ph.D",
         "study_mode": "Regular / Full-time",
         "institution_category": "Central/State Government funded",

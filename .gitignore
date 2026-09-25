@@ -35,6 +35,8 @@ build/
 # Database
 *.db
 *.sqlite
+/backend/uploads/*
+!/backend/uploads/.gitkeep
 
 # Coverage
 coverage/

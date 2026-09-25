@@ -1,200 +1,113 @@
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
+
 
 def evaluate_application_rules(
     scheme_code: str,
     declared_fields: Dict[str, Any],
     scheme_config: Dict[str, Any],
-    documents: Optional[List[Dict[str, Any]]] = None
+    documents: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
+    """Apply transparent, scheme-configured checks to declared application data.
+
+    This is deterministic rules evaluation, not ML/OCR or document authentication.
+    Each validation in a scheme config supports: required, equals, one_of, min,
+    max, max_by_field, and except_if.
     """
-    AROHAN-ST AI Rule Engine:
-    Compares declared applicant fields and document references against
-    the scheme's JSON configuration criteria.
-    Returns pass_fail status, confidence score (0-100), and structured mismatches.
-    """
-    eligibility = scheme_config.get("eligibility_rules", {})
-    required_docs = scheme_config.get("required_documents", [])
-    
     mismatches: List[Dict[str, Any]] = []
     passed_checks: List[str] = []
-    
-    # Base confidence score
-    confidence = 98.0
-    
-    # 1. Social Category Verification (ST check)
-    category = str(declared_fields.get("category", "")).strip().upper()
-    target_category = eligibility.get("target_category", "ST")
-    if category != target_category:
-        mismatches.append({
-            "field": "category",
-            "label": "Social Category",
-            "declared_value": category or "Not Provided",
-            "expected_rule": f"Must belong to {target_category} (Scheduled Tribe)",
-            "severity": "ERROR",
-            "description": f"Ineligible category '{category}'. MoTA scheme exclusively reserves benefits for ST candidates."
-        })
-        confidence -= 35.0
-    else:
-        passed_checks.append("Verified Scheduled Tribe (ST) category eligibility.")
+    checks = scheme_config.get("validation_rules", [])
 
-    # 1b. Caste Certificate Number format check
-    caste_cert_no = str(declared_fields.get("caste_certificate_no", "")).strip()
-    if not caste_cert_no or len(caste_cert_no) < 4:
-        mismatches.append({
-            "field": "caste_certificate_no",
-            "label": "Caste Certificate Number",
-            "declared_value": caste_cert_no or "None",
-            "expected_rule": "Valid State/UT issued Certificate identifier",
-            "severity": "WARNING",
-            "description": "Missing or abnormally short ST certificate registration number."
-        })
-        confidence -= 10.0
-    else:
-        passed_checks.append(f"Caste certificate identifier '{caste_cert_no}' recorded.")
+    for rule in checks:
+        field = rule["field"]
+        label = rule.get("label", field.replace("_", " ").title())
+        value = declared_fields.get(field)
+        # A documented exception may waive the check when its condition is true.
+        except_if = rule.get("except_if")
+        if except_if and declared_fields.get(except_if.get("field")) == except_if.get("equals"):
+            passed_checks.append(f"{label}: conditional exception recorded for officer verification.")
+            continue
+        if value is None or (isinstance(value, str) and not value.strip()):
+            required_if = rule.get("required_if")
+            conditional_required = not required_if or declared_fields.get(required_if.get("field")) == required_if.get("equals")
+            if rule.get("required") or conditional_required:
+                _add_mismatch(mismatches, rule, label, "Not provided", "Required application information is missing.")
+            continue
 
-    # 2. Annual Family Income Check
-    income_cap = eligibility.get("max_annual_income")
-    declared_income_raw = declared_fields.get("annual_family_income")
-    try:
-        declared_income = float(declared_income_raw) if declared_income_raw is not None else 0.0
-    except (ValueError, TypeError):
-        declared_income = 0.0
-
-    if income_cap is not None:
-        if declared_income > income_cap:
-            mismatches.append({
-                "field": "annual_family_income",
-                "label": "Annual Family Income",
-                "declared_value": f"₹{declared_income:,.0f}",
-                "expected_rule": f"Income must not exceed ₹{income_cap:,.0f} per annum",
-                "severity": "ERROR",
-                "description": f"Declared income ₹{declared_income:,.0f} exceeds the statutory threshold of ₹{income_cap:,.0f}."
-            })
-            confidence -= 30.0
-        else:
-            passed_checks.append(f"Annual income ₹{declared_income:,.0f} complies with ceiling (≤ ₹{income_cap:,.0f}).")
-
-    # 3. Academic Percentage Check
-    min_percentage = eligibility.get("min_qualifying_percentage")
-    pct_field = "pg_percentage" if scheme_code == "NFST" else "qualifying_percentage"
-    declared_pct_raw = declared_fields.get(pct_field)
-    try:
-        declared_pct = float(declared_pct_raw) if declared_pct_raw is not None else 0.0
-    except (ValueError, TypeError):
-        declared_pct = 0.0
-
-    if min_percentage is not None:
-        if declared_pct < min_percentage:
-            mismatches.append({
-                "field": pct_field,
-                "label": "Qualifying Marks (%)",
-                "declared_value": f"{declared_pct}%",
-                "expected_rule": f"Minimum {min_percentage}% aggregate required",
-                "severity": "ERROR",
-                "description": f"Academic aggregate of {declared_pct}% is below minimum cutoff of {min_percentage}%."
-            })
-            confidence -= 25.0
-        else:
-            passed_checks.append(f"Academic aggregate of {declared_pct}% meets scheme threshold (≥ {min_percentage}%).")
-
-    # 4. Age Limit Check (e.g. NOS max age = 35)
-    max_age = eligibility.get("max_age")
-    if max_age is not None:
-        declared_age_raw = declared_fields.get("applicant_age")
+        expected = rule.get("expected", "Must satisfy scheme criteria")
+        rule_type = rule.get("type")
         try:
-            declared_age = int(declared_age_raw) if declared_age_raw is not None else 0
-        except (ValueError, TypeError):
-            declared_age = 0
-        
-        if declared_age > max_age:
-            mismatches.append({
-                "field": "applicant_age",
-                "label": "Applicant Age",
-                "declared_value": f"{declared_age} years",
-                "expected_rule": f"Age must be ≤ {max_age} years as of selection year",
-                "severity": "ERROR",
-                "description": f"Applicant age of {declared_age} exceeds permissible age limit of {max_age}."
-            })
-            confidence -= 20.0
-        elif declared_age > 0:
-            passed_checks.append(f"Applicant age ({declared_age} yrs) within age limit (≤ {max_age} yrs).")
+            if rule_type in ("min", "max", "max_by_field"):
+                actual = float(value)
+                if rule_type == "max_by_field":
+                    limits = rule["limits"]
+                    bound = limits.get(str(declared_fields.get(rule["selector_field"])))
+                    if bound is None:
+                        continue
+                    passed = actual <= float(bound)
+                    expected = f"Must be ≤ {bound} for selected {rule.get('selector_label', 'category')}"
+                else:
+                    bound = float(rule["value"])
+                    passed = actual >= bound if rule_type == "min" else actual <= bound
+                if not passed:
+                    _add_mismatch(mismatches, rule, label, value, expected)
+                else:
+                    passed_checks.append(f"{label} satisfies scheme criteria.")
+            elif rule_type == "equals":
+                passed = str(value).strip().casefold() == str(rule["value"]).casefold()
+                if not passed:
+                    _add_mismatch(mismatches, rule, label, value, expected)
+                else:
+                    passed_checks.append(f"{label} satisfies scheme criteria.")
+            elif rule_type == "one_of":
+                options = rule["values"]
+                passed = str(value).strip().casefold() in {str(item).casefold() for item in options}
+                if not passed:
+                    _add_mismatch(mismatches, rule, label, value, expected)
+                else:
+                    passed_checks.append(f"{label} satisfies scheme criteria.")
+        except (TypeError, ValueError):
+            _add_mismatch(mismatches, rule, label, value, "Provide a valid value for this field.")
 
-    # 5. Scheme-Specific Rules
-    if scheme_code == "NOS":
-        unconditional_offer = declared_fields.get("has_unconditional_offer")
-        if unconditional_offer != "Yes":
-            mismatches.append({
-                "field": "has_unconditional_offer",
-                "label": "Unconditional Admission Offer",
-                "declared_value": unconditional_offer or "No",
-                "expected_rule": "Confirmed unconditional offer letter required",
-                "severity": "ERROR",
-                "description": "Applicant does not have an unconditional admission offer from host foreign university."
-            })
-            confidence -= 20.0
-        else:
-            passed_checks.append("Unconditional foreign university admission offer confirmed.")
-
-    if scheme_code == "NFST":
-        course = declared_fields.get("course_enrolled")
-        eligible_courses = eligibility.get("eligible_courses", ["M.Phil", "Ph.D", "Integrated Ph.D"])
-        if course and course not in eligible_courses:
-            mismatches.append({
-                "field": "course_enrolled",
-                "label": "Course Enrolled",
-                "declared_value": course,
-                "expected_rule": f"Must be one of: {', '.join(eligible_courses)}",
-                "severity": "ERROR",
-                "description": f"Course '{course}' is not supported under NFST fellowship."
-            })
-            confidence -= 20.0
-        elif course:
-            passed_checks.append(f"Course enrollment '{course}' is eligible for doctoral fellowship.")
-
-    # 6. Document Upload Completeness Check
     uploaded_doc_types = set()
-    if documents:
-        for doc in documents:
-            if isinstance(doc, dict):
-                uploaded_doc_types.add(doc.get("doc_type"))
-            elif hasattr(doc, "doc_type"):
-                uploaded_doc_types.add(doc.doc_type)
+    for doc in documents or []:
+        if isinstance(doc, dict):
+            uploaded_doc_types.add(doc.get("doc_type"))
+        elif hasattr(doc, "doc_type"):
+            uploaded_doc_types.add(doc.doc_type)
 
-    for req_doc in required_docs:
-        doc_id = req_doc.get("id")
-        if req_doc.get("required") and doc_id not in uploaded_doc_types:
-            # Add warning mismatch for missing doc
+    for req_doc in scheme_config.get("required_documents", []):
+        if req_doc.get("required") and req_doc.get("id") not in uploaded_doc_types:
             mismatches.append({
-                "field": f"doc_{doc_id}",
-                "label": req_doc.get("name"),
-                "declared_value": "Not Uploaded",
+                "field": f"doc_{req_doc['id']}",
+                "label": req_doc.get("name", req_doc["id"]),
+                "declared_value": "Not uploaded",
                 "expected_rule": "Mandatory document attachment",
-                "severity": "WARNING",
-                "description": f"Missing mandatory document: {req_doc.get('name')}."
+                "severity": "ERROR",
+                "description": f"Missing required document: {req_doc.get('name', req_doc['id'])}.",
             })
-            confidence -= 8.0
 
-    # Calculate final confidence score bounded between 15% and 99%
-    confidence = max(15.0, min(99.0, confidence))
-    has_error_mismatches = any(m["severity"] == "ERROR" for m in mismatches)
-    pass_fail = not has_error_mismatches
-
-    if pass_fail:
-        summary = (
-            f"Automated verification PASSED with {confidence:.1f}% confidence score. "
-            f"All {len(passed_checks)} statutory criteria verified successfully."
-        )
-    else:
-        error_count = sum(1 for m in mismatches if m["severity"] == "ERROR")
-        summary = (
-            f"Automated verification FLAGGED {error_count} critical discrepancy(ies). "
-            f"Review queue confidence score reduced to {confidence:.1f}%."
-        )
-
+    has_errors = any(item["severity"] == "ERROR" for item in mismatches)
+    summary = (
+        f"Rule checks flagged {sum(item['severity'] == 'ERROR' for item in mismatches)} eligibility issue(s); officer review required."
+        if has_errors else
+        f"No configured eligibility rule failures found. {len(passed_checks)} checks passed; documents and claims still require official verification."
+    )
     return {
-        "pass_fail": pass_fail,
-        "confidence_score": round(confidence, 1),
+        "pass_fail": not has_errors,
+        # Legacy API/UI field. This is a rules status indicator, not calibrated confidence.
+        "confidence_score": max(15.0, min(99.0, 98.0 - 20.0 * sum(item["severity"] == "ERROR" for item in mismatches) - 4.0 * sum(item["severity"] == "WARNING" for item in mismatches))),
         "mismatches": mismatches,
         "passed_checks": passed_checks,
-        "summary": summary
+        "summary": summary,
     }
+
+
+def _add_mismatch(mismatches: List[Dict[str, Any]], rule: Dict[str, Any], label: str, value: Any, expected: str) -> None:
+    mismatches.append({
+        "field": rule["field"],
+        "label": label,
+        "declared_value": value,
+        "expected_rule": expected,
+        "severity": rule.get("severity", "ERROR"),
+        "description": rule.get("description", f"{label} does not meet the configured scheme requirement."),
+    })

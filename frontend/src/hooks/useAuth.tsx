@@ -14,45 +14,19 @@ interface AuthContextType {
   user: UserProfile | null;
   isAdmin: boolean;
   isApplicant: boolean;
-  loginApplicant: (name: string, email: string) => void;
-  loginAdmin: (name?: string) => void;
+  loginPortal: (name: string, email: string, password?: string) => boolean;
   logout: () => void;
-  selectDemoProfile: (profileKey: 'ramesh' | 'sunita' | 'amit' | 'officer') => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const DEMO_PROFILES: Record<string, UserProfile> = {
-  ramesh: {
-    role: 'applicant',
-    name: 'Ramesh Chandra Munda',
-    email: 'ramesh.munda@example.edu',
-    category: 'ST'
-  },
-  sunita: {
-    role: 'applicant',
-    name: 'Sunita Devi Soren',
-    email: 'sunita.soren@example.com',
-    category: 'ST'
-  },
-  amit: {
-    role: 'applicant',
-    name: 'Amit Tirkey',
-    email: 'amit.tirkey@example.com',
-    category: 'ST'
-  },
-  officer: {
-    role: 'admin',
-    name: 'Dr. Arjun K. Meena',
-    email: 'arjun.meena@tribal.gov.in',
-    officerDesignation: 'Director (Scholarship & Fellowship Cell), MoTA'
-  }
-};
+const DEMO_ADMIN_USERNAME = 'MotaOfficer@gmail.com';
+const DEMO_ADMIN_PASSWORD = 'MotaOfficer';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(() => {
-    // Default to applicant Ramesh or read from localStorage
-    const saved = localStorage.getItem('arohan_auth_user');
+    // Require the user to choose an applicant or officer login each session.
+    const saved = localStorage.getItem('arohan_auth_user_v2');
     if (saved) {
       try {
         return JSON.parse(saved);
@@ -60,43 +34,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // fallback
       }
     }
-    return DEMO_PROFILES.ramesh;
+    return null;
   });
 
   useEffect(() => {
     if (user) {
-      localStorage.setItem('arohan_auth_user', JSON.stringify(user));
+      localStorage.setItem('arohan_auth_user_v2', JSON.stringify(user));
     } else {
-      localStorage.removeItem('arohan_auth_user');
+      localStorage.removeItem('arohan_auth_user_v2');
     }
   }, [user]);
 
-  const loginApplicant = (name: string, email: string) => {
+  const loginPortal = (name: string, email: string, password = ''): boolean => {
+    if (email.trim().toLowerCase() === DEMO_ADMIN_USERNAME.toLowerCase()) {
+      if (password !== DEMO_ADMIN_PASSWORD) return false;
+      setUser({
+        role: 'admin',
+        name: name.trim() || 'MoTA Officer',
+        email: DEMO_ADMIN_USERNAME,
+        officerDesignation: 'Verification Officer (MoTA Desk)'
+      });
+      return true;
+    }
     setUser({
       role: 'applicant',
       name: name || 'ST Scholar',
       email: email || 'scholar@example.edu',
       category: 'ST'
     });
-  };
-
-  const loginAdmin = (name: string = 'MoTA Verification Officer') => {
-    setUser({
-      role: 'admin',
-      name,
-      email: 'officer@tribal.gov.in',
-      officerDesignation: 'Verification Officer (MoTA Desk)'
-    });
+    return true;
   };
 
   const logout = () => {
     setUser(null);
-  };
-
-  const selectDemoProfile = (profileKey: 'ramesh' | 'sunita' | 'amit' | 'officer') => {
-    if (DEMO_PROFILES[profileKey]) {
-      setUser(DEMO_PROFILES[profileKey]);
-    }
   };
 
   const isAdmin = user?.role === 'admin';
@@ -108,10 +78,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         isAdmin,
         isApplicant,
-        loginApplicant,
-        loginAdmin,
-        logout,
-        selectDemoProfile
+        loginPortal,
+        logout
       }}
     >
       {children}

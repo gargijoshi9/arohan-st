@@ -156,6 +156,9 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({ onSelectApplication })
               <option value="ALL">All Schemes</option>
               <option value="NFST">NFST (National Fellowship)</option>
               <option value="NOS">NOS (Overseas Scholarship)</option>
+              <option value="TOP_CLASS">Top Class Education</option>
+              <option value="POST_MATRIC">Post-Matric Scholarship</option>
+              <option value="PRE_MATRIC">Pre-Matric Scholarship</option>
             </select>
           </div>
 

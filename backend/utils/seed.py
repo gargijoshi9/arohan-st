@@ -9,8 +9,10 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCHEMES_DIR = os.path.join(BASE_DIR, "data", "scheme_configs")
 
 def seed_schemes(db: Session):
-    """Seed NFST and NOS scheme configurations from data/scheme_configs JSON files."""
-    for filename in ["nfst.json", "nos.json"]:
+    """Seed all configured MoTA schemes from data/scheme_configs."""
+    for filename in sorted(os.listdir(SCHEMES_DIR)):
+        if not filename.lower().endswith(".json"):
+            continue
         file_path = os.path.join(SCHEMES_DIR, filename)
         if not os.path.exists(file_path):
             continue
@@ -67,8 +69,10 @@ def seed_demo_applications(db: Session):
         "phone": "9876543210",
         "category": "ST",
         "caste_certificate_no": "ST/JH/2023/88921",
-        "annual_family_income": 280000,
         "course_enrolled": "Ph.D",
+        "study_mode": "Regular / Full-time",
+        "institution_category": "Central/State Government funded",
+        "applicant_age": 29,
         "university_name": "Jawaharlal Nehru University, New Delhi",
         "research_topic": "Tribal Ethnobotany of Chota Nagpur Plateau",
         "admission_year": 2024,
@@ -76,7 +80,7 @@ def seed_demo_applications(db: Session):
     }
     app1_docs = [
         {"doc_type": "caste_cert", "file_name": "st_caste_cert_ramesh.pdf"},
-        {"doc_type": "income_cert", "file_name": "income_cert_2024.pdf"},
+        {"doc_type": "institution_proof", "file_name": "jnu_recognition.pdf"},
         {"doc_type": "admission_letter", "file_name": "jnu_phd_admission_letter.pdf"},
         {"doc_type": "pg_marksheet", "file_name": "msc_marksheet_68.5.pdf"},
         {"doc_type": "id_proof", "file_name": "aadhaar_card_masked.pdf"}
@@ -128,6 +132,12 @@ def seed_demo_applications(db: Session):
         "caste_certificate_no": "ST/OD/2022/45109",
         "applicant_age": 27,
         "annual_family_income": 350000,
+        "course_level": "Master’s",
+        "qs_top_1000": "No",
+        "one_child_self_certified": "Yes",
+        "prior_award": "No",
+        "admission_stage": "Already pursuing",
+        "is_orphan": "No",
         "destination_country": "United Kingdom",
         "foreign_university": "University of Edinburgh",
         "foreign_course": "MSc in Ecological Economics",
@@ -138,9 +148,11 @@ def seed_demo_applications(db: Session):
     app2_docs = [
         {"doc_type": "caste_cert", "file_name": "st_caste_cert_sunita.pdf"},
         {"doc_type": "income_cert", "file_name": "income_cert_sunita.pdf"},
-        {"doc_type": "foreign_offer_letter", "file_name": "edinburgh_unconditional_offer.pdf"},
-        {"doc_type": "qualifying_degree", "file_name": "bsc_honours_transcript.pdf"},
-        {"doc_type": "passport", "file_name": "passport_scan_z6543219.pdf"}
+        {"doc_type": "dob_proof", "file_name": "tenth_certificate.pdf"},
+        {"doc_type": "qualifying_marks", "file_name": "bsc_honours_transcript.pdf"},
+        {"doc_type": "one_child_declaration", "file_name": "one_child_declaration.pdf"},
+        {"doc_type": "admission_proof", "file_name": "edinburgh_admission.pdf"},
+        {"doc_type": "income_cert", "file_name": "income_cert_sunita.pdf"}
     ]
     eval2 = evaluate_application_rules("NOS", app2_data, nos_config, app2_docs)
 
@@ -189,6 +201,12 @@ def seed_demo_applications(db: Session):
         "caste_certificate_no": "ST/CG/2021/11029",
         "applicant_age": 31,
         "annual_family_income": 780000,  # EXCEEDS 6L CAP!
+        "course_level": "Master’s",
+        "qs_top_1000": "No",
+        "one_child_self_certified": "Yes",
+        "prior_award": "No",
+        "admission_stage": "Offer / preliminary offer",
+        "is_orphan": "No",
         "destination_country": "Australia",
         "foreign_university": "University of Melbourne",
         "foreign_course": "Master of Environmental Science",

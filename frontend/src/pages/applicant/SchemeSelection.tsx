@@ -71,7 +71,7 @@ export const SchemeSelection: React.FC<SchemeSelectionProps> = ({ onSelectScheme
           Fellowship & Scholarship Schemes for ST Students
         </h2>
         <p className="text-sm text-slate-600 mt-2">
-          Select a scheme to view eligibility criteria and begin your AI-guided online application.
+          Select a scheme to view eligibility criteria and start an online application.
         </p>
       </div>
 
@@ -94,12 +94,17 @@ export const SchemeSelection: React.FC<SchemeSelectionProps> = ({ onSelectScheme
                     {isNFST ? <Award className="w-6 h-6" /> : <Globe className="w-6 h-6" />}
                   </div>
                   <span className="text-xs font-bold px-2.5 py-1 rounded bg-slate-100 text-slate-700 border border-slate-200">
-                    CODE: {s.code}
+                    CODE: {s.code}{s.config.external_code ? ` · ID: ${s.config.external_code}` : ''}
                   </span>
                 </div>
 
                 <h3 className="text-lg font-bold text-slate-900 leading-snug">{s.name}</h3>
                 <p className="text-xs text-slate-600 mt-2 line-clamp-2">{s.description}</p>
+                {s.config.registry_metadata && (
+                  <p className="text-[11px] text-slate-500 mt-2">
+                    {s.config.registry_metadata.delivery_type} · {s.config.registry_metadata.scheme_type} · {s.config.registry_metadata.status}
+                  </p>
+                )}
               </div>
 
               {/* Key Specs Grid */}
@@ -127,7 +132,7 @@ export const SchemeSelection: React.FC<SchemeSelectionProps> = ({ onSelectScheme
                     <CheckCircle2 className="w-3.5 h-3.5 text-slate-400" />
                     Min. Qualifying Marks
                   </span>
-                  <span className="font-semibold text-slate-800">{s.min_percentage}% aggregate</span>
+                  <span className="font-semibold text-slate-800">{s.min_percentage == null ? 'No fixed cutoff' : `${s.min_percentage}% aggregate`}</span>
                 </div>
 
                 <div className="flex items-center justify-between py-1">

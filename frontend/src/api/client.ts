@@ -7,6 +7,8 @@ import {
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
+export const documentUrl = (filePath: string) => `${API_BASE}${filePath}`;
+
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
   try {
@@ -41,6 +43,23 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  uploadDocument: async (file: File): Promise<{ file_name: string; file_path: string }> => {
+    const body = new FormData();
+    body.append('file', file);
+    const res = await fetch(`${API_BASE}/documents/upload`, { method: 'POST', body });
+    if (!res.ok) {
+      let message = `Upload failed (${res.status})`;
+      try {
+        const result = await res.json();
+        if (result.detail) message = result.detail;
+      } catch {
+        // Keep the status message if the response is not JSON.
+      }
+      throw new Error(message);
+    }
+    return res.json();
+  },
+
   getSchemes: () => request<Scheme[]>('/schemes'),
   
   getSchemeByCode: (code: string) => request<Scheme>(`/schemes/code/${code}`),

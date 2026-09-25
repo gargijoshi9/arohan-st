@@ -69,7 +69,10 @@ def submit_application(payload: ApplicationCreate, db: Session = Depends(get_db)
     applicant = db.query(Applicant).filter(Applicant.email == payload.email).first()
     category = payload.declared_fields.get("category", "ST")
     caste_no = payload.declared_fields.get("caste_certificate_no", "")
-    annual_inc = float(payload.declared_fields.get("annual_family_income", 0))
+    try:
+        annual_inc = float(payload.declared_fields.get("annual_family_income") or 0)
+    except (TypeError, ValueError):
+        annual_inc = 0.0
 
     if not applicant:
         applicant = Applicant(

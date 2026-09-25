@@ -17,11 +17,17 @@ export interface RequiredDocConfig {
 
 export interface SchemeConfig {
   code: string;
+  external_code?: string;
+  registry_metadata?: {
+    delivery_type: string;
+    scheme_type: string;
+    status: string;
+  };
   name: string;
   short_description: string;
   department: string;
   degree_level: string;
-  tenure_years: number;
+  tenure_years: number | null;
   stipend_amount: string;
   eligibility_rules: {
     target_category: string;
@@ -34,6 +40,8 @@ export interface SchemeConfig {
   };
   required_documents: RequiredDocConfig[];
   form_fields: FormFieldConfig[];
+  source_guideline?: string;
+  selection_notes?: string[];
 }
 
 export interface Scheme {

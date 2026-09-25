@@ -1,129 +1,249 @@
 {
   "code": "NFST",
-  "name": "National Fellowship for Higher Education of ST Students (NFST)",
-  "short_description": "Financial assistance for Scheduled Tribe students to pursue regular and full-time M.Phil and Ph.D courses in Indian Universities / Institutes.",
+  "external_code": "ARG45",
+  "name": "National Fellowship for ST Students",
+  "short_description": "National Fellowship for eligible ST scholars pursuing regular M.Phil./Ph.D. research in India.",
   "department": "Ministry of Tribal Affairs, Government of India",
-  "degree_level": "M.Phil / Ph.D",
+  "degree_level": "M.Phil / M.Phil + Ph.D / Ph.D",
   "tenure_years": 5,
-  "stipend_amount": "₹31,000 - ₹35,000 / month + HRA & Contingency",
+  "stipend_amount": "As per applicable fellowship rates in the guideline",
+  "source_guideline": "GuidelinesFellowshipandScholarship2022.pdf (Part A: National Fellowship, clauses 2.1-3.7)",
   "eligibility_rules": {
     "target_category": "ST",
-    "max_annual_income": 600000,
-    "min_qualifying_percentage": 55.0,
-    "eligible_courses": ["M.Phil", "Ph.D", "Integrated Ph.D"],
-    "max_age": null,
-    "mode_of_study": "Regular / Full-time"
+    "max_annual_income": null,
+    "min_qualifying_percentage": 55,
+    "max_age": 36,
+    "eligible_courses": [
+      "M.Phil",
+      "M.Phil + Ph.D",
+      "Ph.D"
+    ],
+    "income_criteria": "None"
   },
+  "validation_rules": [
+    {
+      "field": "category",
+      "type": "equals",
+      "label": "Scheduled Tribe category",
+      "severity": "ERROR",
+      "value": "ST",
+      "expected": "Applicant must belong to the Scheduled Tribe category in their domicile State/UT."
+    },
+    {
+      "field": "pg_percentage",
+      "type": "min",
+      "label": "Post-graduation marks",
+      "severity": "ERROR",
+      "value": 55,
+      "expected": "Minimum 55% at final PG examination"
+    },
+    {
+      "field": "applicant_age",
+      "type": "max",
+      "label": "Age",
+      "severity": "ERROR",
+      "value": 36,
+      "expected": "Maximum 36 years as of 1 July of the relevant award year",
+      "required": true
+    },
+    {
+      "field": "course_enrolled",
+      "type": "one_of",
+      "label": "Research course",
+      "severity": "ERROR",
+      "values": [
+        "M.Phil",
+        "M.Phil + Ph.D",
+        "Ph.D"
+      ],
+      "expected": "Must be M.Phil, M.Phil + Ph.D, or Ph.D"
+    },
+    {
+      "field": "study_mode",
+      "type": "equals",
+      "label": "Mode of study",
+      "severity": "ERROR",
+      "value": "Regular / Full-time",
+      "expected": "Regular and full-time study is required"
+    },
+    {
+      "field": "institution_category",
+      "type": "one_of",
+      "label": "Institution category",
+      "severity": "ERROR",
+      "values": [
+        "UGC 2(f)/12(B)",
+        "Deemed UGC-grant eligible",
+        "Central/State Government funded",
+        "Institute of National Importance"
+      ],
+      "expected": "Institution must fit one of the categories in clause 2.4"
+    }
+  ],
   "required_documents": [
     {
       "id": "caste_cert",
-      "name": "Scheduled Tribe (ST) Caste Certificate",
+      "name": "ST certificate",
       "required": true,
-      "description": "Valid ST certificate issued by competent authority (Tehsildar/SDM)"
-    },
-    {
-      "id": "income_cert",
-      "name": "Family Income Certificate",
-      "required": true,
-      "description": "Current financial year income certificate showing family income ≤ ₹6,00,000"
-    },
-    {
-      "id": "admission_letter",
-      "name": "University Admission / Registration Letter",
-      "required": true,
-      "description": "Proof of confirmed admission to regular M.Phil / Ph.D program"
+      "description": "Certificate from competent State/UT authority"
     },
     {
       "id": "pg_marksheet",
-      "name": "Post-Graduation Marksheet / Degree",
+      "name": "Post-graduation marksheet",
       "required": true,
-      "description": "Marksheet showing minimum 55% aggregate in Master's degree"
+      "description": "Final examination marks or recognized grade conversion"
     },
     {
-      "id": "id_proof",
-      "name": "Identity Proof (Aadhaar / Voter ID)",
+      "id": "admission_letter",
+      "name": "Admission/registration proof",
       "required": true,
-      "description": "Government issued photo identification"
+      "description": "Proof of admission in eligible regular full-time research course"
+    },
+    {
+      "id": "institution_proof",
+      "name": "Institution eligibility proof",
+      "required": true,
+      "description": "Institution category/recognition evidence"
+    },
+    {
+      "id": "disability_cert",
+      "name": "Disability certificate (if applicable)",
+      "required": false,
+      "description": "At least 40% disability certificate where applying in Divyangjan sub-category"
+    },
+    {
+      "id": "pvtg_proof",
+      "name": "PVTG proof (if applicable)",
+      "required": false,
+      "description": "Proof for PVTG sub-category where applicable"
     }
   ],
   "form_fields": [
     {
       "name": "full_name",
-      "label": "Full Name (as per certificates)",
+      "label": "Applicant full name",
       "type": "text",
-      "required": true,
-      "placeholder": "e.g. Ramesh Chandra Munda"
+      "required": true
     },
     {
       "name": "email",
-      "label": "Email Address",
+      "label": "Email",
       "type": "email",
-      "required": true,
-      "placeholder": "e.g. ramesh.munda@example.edu"
+      "required": true
     },
     {
       "name": "phone",
-      "label": "Mobile Number",
+      "label": "Mobile",
       "type": "tel",
-      "required": true,
-      "placeholder": "e.g. 9876543210"
+      "required": true
     },
     {
       "name": "category",
-      "label": "Social Category",
+      "label": "Social category",
       "type": "select",
       "required": true,
-      "options": ["ST", "SC", "OBC", "General"]
+      "options": [
+        "ST",
+        "Other"
+      ]
     },
     {
       "name": "caste_certificate_no",
-      "label": "ST Certificate Number",
+      "label": "ST certificate number",
       "type": "text",
-      "required": true,
-      "placeholder": "e.g. ST/JH/2023/88921"
-    },
-    {
-      "name": "annual_family_income",
-      "label": "Annual Family Income (INR)",
-      "type": "number",
-      "required": true,
-      "placeholder": "e.g. 280000"
+      "required": true
     },
     {
       "name": "course_enrolled",
-      "label": "Course Enrolled",
+      "label": "Research course",
       "type": "select",
       "required": true,
-      "options": ["Ph.D", "M.Phil", "Integrated Ph.D"]
-    },
-    {
-      "name": "university_name",
-      "label": "Institution / University Name",
-      "type": "text",
-      "required": true,
-      "placeholder": "e.g. Jawaharlal Nehru University, New Delhi"
-    },
-    {
-      "name": "research_topic",
-      "label": "Research Topic / Field of Study",
-      "type": "text",
-      "required": true,
-      "placeholder": "e.g. Tribal Ethnobotany of Chota Nagpur Plateau"
-    },
-    {
-      "name": "admission_year",
-      "label": "Year of Admission / Registration",
-      "type": "number",
-      "required": true,
-      "placeholder": "e.g. 2024"
+      "options": [
+        "M.Phil",
+        "M.Phil + Ph.D",
+        "Ph.D"
+      ]
     },
     {
       "name": "pg_percentage",
-      "label": "Post-Graduation Marks (%)",
+      "label": "Post-graduation marks (%)",
       "type": "number",
-      "step": "0.1",
+      "required": true
+    },
+    {
+      "name": "applicant_age",
+      "label": "Age on 1 July of award year",
+      "type": "number",
+      "required": true
+    },
+    {
+      "name": "study_mode",
+      "label": "Mode of study",
+      "type": "select",
       "required": true,
-      "placeholder": "e.g. 64.5"
+      "options": [
+        "Regular / Full-time",
+        "Part-time / Distance"
+      ]
+    },
+    {
+      "name": "institution_category",
+      "label": "Institution category",
+      "type": "select",
+      "required": true,
+      "options": [
+        "UGC 2(f)/12(B)",
+        "Deemed UGC-grant eligible",
+        "Central/State Government funded",
+        "Institute of National Importance"
+      ]
+    },
+    {
+      "name": "gender",
+      "label": "Gender",
+      "type": "select",
+      "required": false,
+      "options": [
+        "Female",
+        "Male",
+        "Other"
+      ]
+    },
+    {
+      "name": "is_pvtg",
+      "label": "PVTG category",
+      "type": "select",
+      "required": false,
+      "options": [
+        "Yes",
+        "No"
+      ]
+    },
+    {
+      "name": "is_divyangjan",
+      "label": "Divyangjan (40%+ certified)",
+      "type": "select",
+      "required": false,
+      "options": [
+        "Yes",
+        "No"
+      ]
+    },
+    {
+      "name": "university_name",
+      "label": "University / institute",
+      "type": "text",
+      "required": true
     }
-  ]
+  ],
+  "selection_notes": [
+    "750 fresh awards per year; category allocation: Divyangjan 38, PVTG 25, female 225, ST others 462 (guideline says female allocation includes Divyangjan/PVTG).",
+    "When oversubscribed, merit is based on PG marks with specified sub-category priority and IIT/AIIMS/IIM/IISER admission preference; do not auto-award.",
+    "No income eligibility criterion."
+  ],
+  "registry_metadata": {
+    "delivery_type": "In Cash",
+    "scheme_type": "Central Sector Scheme",
+    "status": "Active"
+  }
 }

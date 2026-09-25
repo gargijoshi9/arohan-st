@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { api } from '../../api/client';
+import { api, documentUrl } from '../../api/client';
 import { Application } from '../../api/types';
 import { useAuth } from '../../hooks/useAuth';
 import { StatusBadge } from '../../components/StatusBadge';
@@ -26,7 +26,7 @@ interface StatusTrackerProps {
 export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, onApplyNew }) => {
   const { user } = useAuth();
   const [applications, setApplications] = useState<Application[]>([]);
-  const [searchEmail, setSearchEmail] = useState<string>(user?.email || 'ramesh.munda@example.edu');
+  const [searchEmail, setSearchEmail] = useState<string>(user?.email || '');
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(highlightAppId || null);
@@ -35,8 +35,6 @@ export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, on
     if (user?.email) {
       setSearchEmail(user.email);
       fetchApplications(user.email);
-    } else {
-      fetchApplications('ramesh.munda@example.edu');
     }
   }, [user]);
 
@@ -357,11 +355,14 @@ export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, on
                               <div className="flex items-center gap-2">
                                 <FileText className="w-3.5 h-3.5 text-blue-700" />
                                 <span className="font-medium text-slate-800">{d.file_name}</span>
-                                <span className="text-[10px] text-slate-400">({d.doc_type})</span>
+                              <span className="text-[10px] text-slate-400">({d.doc_type})</span>
                               </div>
-                              <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-medium">
-                                {d.status || 'UPLOADED'}
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-medium">
+                                  {d.status || 'UPLOADED'}
+                                </span>
+                                {d.file_path?.startsWith('/uploads/') && <a href={documentUrl(d.file_path)} target="_blank" rel="noreferrer" className="text-xs font-semibold text-blue-800 underline">View</a>}
+                              </div>
                             </div>
                           ))}
                         </div>

@@ -1,20 +1,27 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { UserCheck, Shield, Sparkles, ArrowRight } from 'lucide-react';
+import { UserCheck, ArrowRight, Lock } from 'lucide-react';
 
 interface ApplicantLoginProps {
   onLoginSuccess: () => void;
 }
 
 export const ApplicantLogin: React.FC<ApplicantLoginProps> = ({ onLoginSuccess }) => {
-  const { loginApplicant, selectDemoProfile } = useAuth();
-  const [name, setName] = useState('Ramesh Chandra Munda');
-  const [email, setEmail] = useState('ramesh.munda@example.edu');
+  const { loginPortal } = useAuth();
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const isOfficerEmail = email.trim().toLowerCase() === 'motaofficer@gmail.com';
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    loginApplicant(name, email);
-    onLoginSuccess();
+    if (loginPortal(name, email, password)) {
+      setError(null);
+      onLoginSuccess();
+    } else {
+      setError('Incorrect MoTA officer password.');
+    }
   };
 
   return (
@@ -25,40 +32,8 @@ export const ApplicantLogin: React.FC<ApplicantLoginProps> = ({ onLoginSuccess }
         </div>
         <h2 className="text-xl font-bold text-slate-900">ST Scholar Portal Login</h2>
         <p className="text-xs text-slate-500 mt-1">
-          Ministry of Tribal Affairs — Direct Fellowship & Scholarship Access
+          Ministry of Tribal Affairs — Scholarship, Fellowship & Officer Access
         </p>
-      </div>
-
-      {/* Quick Demo Pre-fill */}
-      <div className="mb-6 p-3 bg-blue-50/70 border border-blue-200 rounded-lg text-xs">
-        <div className="font-semibold text-blue-900 mb-2 flex items-center gap-1.5">
-          <Sparkles className="w-3.5 h-3.5 text-blue-700" />
-          <span>Quick Demo Presets:</span>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              selectDemoProfile('ramesh');
-              onLoginSuccess();
-            }}
-            className="p-2 bg-white rounded border border-blue-200 hover:border-blue-500 text-left transition"
-          >
-            <div className="font-medium text-slate-800">Ramesh Munda</div>
-            <div className="text-[10px] text-slate-500">NFST Fellow (Pass)</div>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              selectDemoProfile('amit');
-              onLoginSuccess();
-            }}
-            className="p-2 bg-white rounded border border-rose-200 hover:border-rose-400 text-left transition"
-          >
-            <div className="font-medium text-slate-800">Amit Tirkey</div>
-            <div className="text-[10px] text-rose-600">NOS (Income Flagged)</div>
-          </button>
-        </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -66,7 +41,7 @@ export const ApplicantLogin: React.FC<ApplicantLoginProps> = ({ onLoginSuccess }
           <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name</label>
           <input
             type="text"
-            required
+            required={!isOfficerEmail}
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:outline-none"
@@ -75,7 +50,9 @@ export const ApplicantLogin: React.FC<ApplicantLoginProps> = ({ onLoginSuccess }
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1">Email Address</label>
+          <label className="block text-xs font-semibold text-slate-700 mb-1">
+            {isOfficerEmail ? 'Officer Username (email)' : 'Email Address'}
+          </label>
           <input
             type="email"
             required
@@ -85,6 +62,25 @@ export const ApplicantLogin: React.FC<ApplicantLoginProps> = ({ onLoginSuccess }
             placeholder="Enter your email"
           />
         </div>
+
+        {isOfficerEmail && (
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Password</label>
+            <div className="relative">
+              <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                placeholder="Enter password"
+              />
+            </div>
+          </div>
+        )}
+
+        {error && <p role="alert" className="text-xs text-rose-700">{error}</p>}
 
         <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-600">
           <span className="font-semibold text-slate-700">Scheduled Tribe (ST) Verification:</span>{' '}

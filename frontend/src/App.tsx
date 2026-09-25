@@ -6,7 +6,6 @@ import { SchemeSelection } from './pages/applicant/SchemeSelection';
 import { ApplicationForm } from './pages/applicant/ApplicationForm';
 import { StatusTracker } from './pages/applicant/StatusTracker';
 import { ApplicantLogin } from './pages/applicant/ApplicantLogin';
-import { AdminLogin } from './pages/admin/AdminLogin';
 import { ReviewQueue } from './pages/admin/ReviewQueue';
 import { ApplicationDetail } from './pages/admin/ApplicationDetail';
 import { Landmark, Shield, Award, Users } from 'lucide-react';
@@ -47,7 +46,7 @@ export const App: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-800">
       {/* Header */}
-      <Header currentTab={currentTab} onSelectTab={handleSelectTab} />
+      <Header />
 
       {/* Navigation */}
       {user && <Navbar currentTab={currentTab} onSelectTab={handleSelectTab} />}
@@ -55,11 +54,8 @@ export const App: React.FC = () => {
       {/* Main View Area */}
       <main className="flex-1">
         {!user ? (
-          <div className="max-w-4xl mx-auto px-4 py-10">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <ApplicantLogin onLoginSuccess={() => setCurrentTab('schemes')} />
-              <AdminLogin onLoginSuccess={() => setCurrentTab('admin-queue')} />
-            </div>
+          <div className="max-w-md mx-auto px-4 py-10">
+            <ApplicantLogin onLoginSuccess={() => setCurrentTab('schemes')} />
           </div>
         ) : isAdmin ? (
           // ADMIN DESK
@@ -101,7 +97,7 @@ export const App: React.FC = () => {
               <div>
                 <div className="text-slate-200 font-bold">AROHAN-ST Prototype Platform</div>
                 <div className="text-[11px] text-slate-400">
-                  National Fellowship (NFST) & National Overseas Scholarship (NOS) Schemes
+                  MoTA ST Scholarship & Fellowship Schemes
                 </div>
               </div>
             </div>
@@ -109,7 +105,7 @@ export const App: React.FC = () => {
             <div className="text-center md:text-right text-[11px] text-slate-500">
               <div>Designed for Ministry of Tribal Affairs (MoTA) Fellowship Adjudication</div>
               <div className="mt-1">
-                AI Rule Engine Pre-screening • Zero Fraud Risk Stubs • Hackathon Edition 2026
+                Configurable eligibility rules • Officer review required • Hackathon prototype
               </div>
             </div>
           </div>

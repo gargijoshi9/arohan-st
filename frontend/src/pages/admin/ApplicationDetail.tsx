@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { api } from '../../api/client';
+import { api, documentUrl } from '../../api/client';
 import { Application } from '../../api/types';
 import { StatusBadge } from '../../components/StatusBadge';
 import { ConfidenceMeter } from '../../components/ConfidenceMeter';
@@ -304,8 +304,11 @@ export const ApplicationDetail: React.FC<ApplicationDetailProps> = ({
                       </div>
                     </div>
                     <span className="text-[11px] font-medium px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      Verified Reference
+                      Uploaded file
                     </span>
+                    {d.file_path && d.file_path.startsWith('/uploads/') && (
+                      <a href={documentUrl(d.file_path)} target="_blank" rel="noreferrer" className="text-xs font-semibold text-blue-800 underline">View file</a>
+                    )}
                   </div>
                 ))}
               </div>

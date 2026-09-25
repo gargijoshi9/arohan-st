@@ -1,0 +1,236 @@
+{
+  "code": "PRE_MATRIC",
+  "external_code": "BPVGK",
+  "name": "Pre-Matric Scholarship Scheme for ST Students",
+  "short_description": "Scholarship for ST students studying in eligible government or government-recognized schools.",
+  "department": "Ministry of Tribal Affairs and State/UT implementing authorities",
+  "degree_level": "Class IX-X (as supported by the supplied guideline)",
+  "tenure_years": 2,
+  "stipend_amount": "₹225/month day scholar or ₹525/month hosteller for 10 months, books grant; additional disability allowance as guideline",
+  "source_guideline": "guidelinesPrematric.pdf (clauses 3.2-3.5)",
+  "eligibility_rules": {
+    "target_category": "ST",
+    "max_annual_income": 250000,
+    "min_qualifying_percentage": null,
+    "eligible_classes": [
+      "IX",
+      "X"
+    ]
+  },
+  "validation_rules": [
+    {
+      "field": "category",
+      "type": "equals",
+      "label": "Scheduled Tribe category",
+      "severity": "ERROR",
+      "value": "ST",
+      "expected": "Applicant must belong to the Scheduled Tribe category in their domicile State/UT."
+    },
+    {
+      "field": "annual_family_income",
+      "type": "max",
+      "label": "Annual family income",
+      "severity": "ERROR",
+      "value": 250000,
+      "expected": "Family income must not exceed ₹2,50,000/year; orphan-supported-by-guardian exemption applies",
+      "except_if": {
+        "field": "is_orphan",
+        "equals": "Yes"
+      }
+    },
+    {
+      "field": "class_studying",
+      "type": "one_of",
+      "label": "Class studying",
+      "severity": "ERROR",
+      "values": [
+        "IX",
+        "X"
+      ],
+      "expected": "Only the classes covered by the supplied guideline"
+    },
+    {
+      "field": "eligible_school",
+      "type": "equals",
+      "label": "School recognition",
+      "severity": "ERROR",
+      "value": "Yes",
+      "expected": "Government school or school recognized by Government/Central or State Board"
+    },
+    {
+      "field": "other_scholarship",
+      "type": "equals",
+      "label": "Other scholarship",
+      "severity": "ERROR",
+      "value": "No",
+      "expected": "Applicant must not receive another scholarship"
+    },
+    {
+      "field": "class_repeated",
+      "type": "equals",
+      "label": "Repeated class",
+      "severity": "ERROR",
+      "value": "No",
+      "expected": "A class is funded only once; no second award for repeating the same class"
+    }
+  ],
+  "required_documents": [
+    {
+      "id": "caste_cert",
+      "name": "ST certificate",
+      "required": true,
+      "description": "ST proof for domicile State/UT"
+    },
+    {
+      "id": "income_cert",
+      "name": "Family income certificate",
+      "required": true,
+      "description": "Income proof; orphan exemption subject to proof"
+    },
+    {
+      "id": "domicile_cert",
+      "name": "Domicile certificate",
+      "required": true,
+      "description": "Domicile State/UT proof"
+    },
+    {
+      "id": "school_enrolment",
+      "name": "School enrolment proof",
+      "required": true,
+      "description": "Current class and recognized-school evidence"
+    },
+    {
+      "id": "bank_aadhaar",
+      "name": "Student/parent bank and Aadhaar details",
+      "required": true,
+      "description": "Active scheduled bank account linked with Aadhaar/mobile"
+    },
+    {
+      "id": "disability_cert",
+      "name": "Disability/medical certificate (if applicable)",
+      "required": true,
+      "description": "For applicable disability allowance"
+    }
+  ],
+  "form_fields": [
+    {
+      "name": "full_name",
+      "label": "Student full name",
+      "type": "text",
+      "required": true
+    },
+    {
+      "name": "email",
+      "label": "Parent/guardian email",
+      "type": "email",
+      "required": true
+    },
+    {
+      "name": "phone",
+      "label": "Mobile",
+      "type": "tel",
+      "required": true
+    },
+    {
+      "name": "category",
+      "label": "Social category",
+      "type": "select",
+      "required": true,
+      "options": [
+        "ST",
+        "Other"
+      ]
+    },
+    {
+      "name": "annual_family_income",
+      "label": "Annual family income (INR)",
+      "type": "number",
+      "required": false
+    },
+    {
+      "name": "is_orphan",
+      "label": "Orphan supported by guardian",
+      "type": "select",
+      "required": true,
+      "options": [
+        "No",
+        "Yes"
+      ]
+    },
+    {
+      "name": "class_studying",
+      "label": "Class",
+      "type": "select",
+      "required": true,
+      "options": [
+        "IX",
+        "X"
+      ]
+    },
+    {
+      "name": "eligible_school",
+      "label": "Government/recognized school",
+      "type": "select",
+      "required": true,
+      "options": [
+        "No",
+        "Yes"
+      ]
+    },
+    {
+      "name": "other_scholarship",
+      "label": "Receiving another scholarship",
+      "type": "select",
+      "required": true,
+      "options": [
+        "No",
+        "Yes"
+      ]
+    },
+    {
+      "name": "class_repeated",
+      "label": "Repeating this same class",
+      "type": "select",
+      "required": true,
+      "options": [
+        "No",
+        "Yes"
+      ]
+    },
+    {
+      "name": "domicile_state",
+      "label": "Domicile State/UT",
+      "type": "text",
+      "required": true
+    },
+    {
+      "name": "hostel_status",
+      "label": "Residence status",
+      "type": "select",
+      "required": false,
+      "options": [
+        "Day Scholar",
+        "Hosteller"
+      ]
+    },
+    {
+      "name": "is_divyangjan",
+      "label": "Applicable certified disability",
+      "type": "select",
+      "required": false,
+      "options": [
+        "No",
+        "Yes"
+      ]
+    }
+  ],
+  "selection_notes": [
+    "The supplied guideline describes renewal from Class IX to Class X after promotion; class-repeat students do not receive the same class award twice.",
+    "Guidelines assign application and DBT operation to States/UTs; process and dates require State/UT configuration."
+  ],
+  "registry_metadata": {
+    "delivery_type": "In Cash",
+    "scheme_type": "Centrally Sponsored Scheme",
+    "status": "Active"
+  }
+}

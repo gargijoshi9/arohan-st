@@ -1,0 +1,227 @@
+{
+  "code": "POST_MATRIC",
+  "external_code": "BVOBC",
+  "name": "Post-Matric Scholarship Scheme for ST Students",
+  "short_description": "Scholarship for eligible ST students in recognized post-matriculation and post-secondary courses.",
+  "department": "Ministry of Tribal Affairs and State/UT implementing authorities",
+  "degree_level": "Class XI onward / recognized post-secondary courses",
+  "tenure_years": null,
+  "stipend_amount": "Compulsory non-refundable fees plus stipend; rates depend on course group and day-scholar/hosteller status",
+  "source_guideline": "guidelinesPostmatric.pdf (clauses 3.2-3.4 and 7)",
+  "eligibility_rules": {
+    "target_category": "ST",
+    "max_annual_income": 250000,
+    "min_qualifying_percentage": null,
+    "course_start": "Matriculation or higher"
+  },
+  "validation_rules": [
+    {
+      "field": "category",
+      "type": "equals",
+      "label": "Scheduled Tribe category",
+      "severity": "ERROR",
+      "value": "ST",
+      "expected": "Applicant must belong to the Scheduled Tribe category in their domicile State/UT."
+    },
+    {
+      "field": "annual_family_income",
+      "type": "max",
+      "label": "Annual family income",
+      "severity": "ERROR",
+      "value": 250000,
+      "expected": "Family income must not exceed ₹2,50,000/year; orphan-supported-by-guardian exemption applies",
+      "except_if": {
+        "field": "is_orphan",
+        "equals": "Yes"
+      }
+    },
+    {
+      "field": "recognized_course",
+      "type": "equals",
+      "label": "Recognized post-matric course",
+      "severity": "ERROR",
+      "value": "Yes",
+      "expected": "Course must be recognized by the competent approving authority"
+    },
+    {
+      "field": "eligible_institution",
+      "type": "equals",
+      "label": "Eligible institution",
+      "severity": "ERROR",
+      "value": "Yes",
+      "expected": "Institution must meet one of the guideline institution categories"
+    },
+    {
+      "field": "other_scholarship",
+      "type": "equals",
+      "label": "Other scholarship",
+      "severity": "ERROR",
+      "value": "No",
+      "expected": "Only one scholarship/stipend at a time"
+    },
+    {
+      "field": "top_class_institute",
+      "type": "equals",
+      "label": "Top Class duplication",
+      "severity": "ERROR",
+      "value": "No",
+      "expected": "Students in Top Class institutes should apply under National Scholarship Scheme, subject to transition provisions"
+    }
+  ],
+  "required_documents": [
+    {
+      "id": "caste_cert",
+      "name": "ST certificate",
+      "required": true,
+      "description": "ST proof for domicile State/UT"
+    },
+    {
+      "id": "income_cert",
+      "name": "Family income certificate",
+      "required": true,
+      "description": "Income certificate from competent authority; self-declaration is not accepted"
+    },
+    {
+      "id": "domicile_cert",
+      "name": "Domicile certificate",
+      "required": true,
+      "description": "Domicile State/UT proof"
+    },
+    {
+      "id": "marksheets",
+      "name": "Previous examination marksheets",
+      "required": true,
+      "description": "Matriculation or higher qualification record"
+    },
+    {
+      "id": "admission_proof",
+      "name": "Admission proof",
+      "required": true,
+      "description": "Recognized post-matric course admission"
+    },
+    {
+      "id": "bank_aadhaar",
+      "name": "Student bank/Aadhaar details",
+      "required": true,
+      "description": "Valid scheduled bank account linked with Aadhaar/mobile"
+    }
+  ],
+  "form_fields": [
+    {
+      "name": "full_name",
+      "label": "Applicant full name",
+      "type": "text",
+      "required": true
+    },
+    {
+      "name": "email",
+      "label": "Email",
+      "type": "email",
+      "required": true
+    },
+    {
+      "name": "phone",
+      "label": "Mobile",
+      "type": "tel",
+      "required": true
+    },
+    {
+      "name": "category",
+      "label": "Social category",
+      "type": "select",
+      "required": true,
+      "options": [
+        "ST",
+        "Other"
+      ]
+    },
+    {
+      "name": "annual_family_income",
+      "label": "Annual family income (INR)",
+      "type": "number",
+      "required": false
+    },
+    {
+      "name": "is_orphan",
+      "label": "Orphan supported by guardian",
+      "type": "select",
+      "required": true,
+      "options": [
+        "No",
+        "Yes"
+      ]
+    },
+    {
+      "name": "course_name",
+      "label": "Course name",
+      "type": "text",
+      "required": true
+    },
+    {
+      "name": "recognized_course",
+      "label": "Course recognized by approving authority",
+      "type": "select",
+      "required": true,
+      "options": [
+        "No",
+        "Yes"
+      ]
+    },
+    {
+      "name": "eligible_institution",
+      "label": "Institution meets scheme categories",
+      "type": "select",
+      "required": true,
+      "options": [
+        "No",
+        "Yes"
+      ]
+    },
+    {
+      "name": "other_scholarship",
+      "label": "Receiving other scholarship/stipend",
+      "type": "select",
+      "required": true,
+      "options": [
+        "No",
+        "Yes"
+      ]
+    },
+    {
+      "name": "top_class_institute",
+      "label": "Institute on Top Class list",
+      "type": "select",
+      "required": true,
+      "options": [
+        "No",
+        "Yes"
+      ]
+    },
+    {
+      "name": "domicile_state",
+      "label": "Domicile State/UT",
+      "type": "text",
+      "required": true
+    },
+    {
+      "name": "hostel_status",
+      "label": "Residence status",
+      "type": "select",
+      "required": false,
+      "options": [
+        "Day Scholar",
+        "Hosteller"
+      ]
+    }
+  ],
+  "selection_notes": [
+    "Income certificate required; self-declarations/affidavits of self-assessed income are not acceptable.",
+    "Income ceiling ₹2.5 lakh/year; orphan supported by guardian is exempt.",
+    "Rates and eligibility administration involve State/UT authorities and State Level Fee Fixation Committee; values are not hardcoded as one nationwide award."
+  ],
+  "registry_metadata": {
+    "delivery_type": "In Cash",
+    "scheme_type": "Centrally Sponsored Scheme",
+    "status": "Active"
+  }
+}

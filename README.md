@@ -13,7 +13,7 @@
 4. **Post-Matric Scholarship**: Centrally Sponsored support for eligible recognized post-secondary courses.
 5. **Pre-Matric Scholarship**: Centrally Sponsored support for eligible ST school students.
 
-The prototype combines a configurable, deterministic eligibility rule engine with applicant and officer interfaces. It flags declared-data mismatches and missing document entries for human review. It does not currently use ML/OCR, authenticate documents, or make final award decisions.
+The prototype combines configurable eligibility rules with applicant and officer interfaces. PDF text extraction and Tesseract OCR for scanned PDFs/images save extracted text and supported fields for review. OCR and rule results are preliminary: they do not authenticate documents or make final award decisions, and human review remains required.
 
 ## Demo Login Credentials
 
@@ -46,7 +46,10 @@ arohan-st/
 │   │   └── documents.py              # Local document upload endpoint
 │   ├── services/
 │   │   ├── __init__.py
-│   │   └── rule_engine.py            # AI rule verification engine & mismatch detection
+│   │   ├── rule_engine.py            # Configured eligibility checks
+│   │   └── ocr_service.py            # PDF/image text extraction and document field parsing
+│   ├── tests/
+│   │   └── test_ocr_service.py       # OCR profile and sample parsing tests
 │   ├── utils/
 │   │   ├── __init__.py
 │   │   └── seed.py                   # Database seeder (schemes & realistic demo cases)
@@ -98,6 +101,7 @@ arohan-st/
 ### Prerequisites
 - Python 3.9+
 - Node.js 18+ and npm
+- Tesseract OCR installed and available on PATH for scanned PDFs and images (digital PDFs and TXT files use local text extraction)
 
 ---
 
@@ -120,6 +124,10 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 The backend starts at `http://localhost:8000`.
 - Interactive API Docs (Swagger): `http://localhost:8000/docs`
 - On startup, the database is automatically created (`arohan.db`) and pre-seeded with scheme configs and 4 realistic demo applications.
+- On Windows, verify OCR installation with `tesseract --version`. If it is not on PATH, set `TESSERACT_CMD` to the full path to `tesseract.exe` before starting the backend.
+- Windows install command: `winget install --id UB-Mannheim.TesseractOCR --exact`
+- Tesseract uses English (`eng`) by default; set `TESSERACT_LANG` (for example, `eng+hin`) only after installing the corresponding trained language data.
+- OCR is a preliminary aid: detected values and confidence are not proof of authenticity or eligibility. Unparsed or conflicting details remain for officer review.
 
 ---
 

@@ -61,6 +61,12 @@ export interface DocumentItem {
   file_name: string;
   file_path?: string;
   status?: string;
+  extracted_text?: string | null;
+  ocr_status?: 'PENDING' | 'SUCCESS' | 'PARTIAL' | 'FAILED' | string;
+  ocr_confidence?: number | null;
+  extraction_method?: string | null;
+  parsed_fields?: Record<string, any> | null;
+  failed_reason?: string | null;
   uploaded_at?: string;
 }
 

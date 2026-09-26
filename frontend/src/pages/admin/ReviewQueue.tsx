@@ -84,7 +84,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({ onSelectApplication })
             Fellowship Verification & Review Desk
           </h2>
           <p className="text-xs text-slate-600 mt-0.5">
-            Applications pre-screened by AI rule engine. Sorted by confidence score to prioritize discrepancies or fast-track.
+            Applications checked against configured rules. The heuristic rule indicator prioritizes review; it is not OCR confidence or an award decision.
           </p>
         </div>
 
@@ -116,7 +116,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({ onSelectApplication })
 
         <div className="bg-white p-4 rounded-xl border border-emerald-200 bg-emerald-50/20 shadow-sm">
           <div className="text-[11px] font-semibold text-emerald-700 uppercase flex items-center justify-between">
-            <span>High Confidence</span>
+            <span>Fewer Rule Flags</span>
             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
           </div>
           <div className="text-2xl font-bold text-emerald-700 mt-1">{highConfidenceCount}</div>
@@ -215,7 +215,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({ onSelectApplication })
                   <th className="py-3 px-4">Application No</th>
                   <th className="py-3 px-4">Applicant</th>
                   <th className="py-3 px-4">Scheme</th>
-                  <th className="py-3 px-4">AI Confidence Score</th>
+                  <th className="py-3 px-4">Rule-check Indicator</th>
                   <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4">Submitted On</th>
                   <th className="py-3 px-4 text-right">Action</th>

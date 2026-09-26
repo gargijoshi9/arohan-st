@@ -61,7 +61,8 @@ class Document(Base):
     status = Column(String(50), default="UPLOADED")  # UPLOADED, VERIFIED, DEFICIENT
     extracted_text = Column(Text, nullable=True)
     ocr_status = Column(String(50), default="PENDING")
-    ocr_confidence = Column(Float, default=0.0)
+    ocr_confidence = Column(Float, nullable=True)
+    extraction_method = Column(String(50), nullable=True)
     parsed_fields = Column(Text, nullable=True)
     failed_reason = Column(Text, nullable=True)
     uploaded_at = Column(DateTime, default=datetime.utcnow)

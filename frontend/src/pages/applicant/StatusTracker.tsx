@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api, documentUrl } from '../../api/client';
-import { Application } from '../../api/types';
+import { Application, Scheme } from '../../api/types';
 import { useAuth } from '../../hooks/useAuth';
 import { StatusBadge } from '../../components/StatusBadge';
 import { ConfidenceMeter } from '../../components/ConfidenceMeter';
@@ -12,8 +12,7 @@ import {
   FileText, 
   Calendar, 
   User, 
-  RotateCcw,
-  ExternalLink,
+  Upload,
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
@@ -30,6 +29,9 @@ export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, on
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(highlightAppId || null);
+  const [schemeConfigs, setSchemeConfigs] = useState<Record<string, Scheme>>({});
+  const [uploadingDocument, setUploadingDocument] = useState<string | null>(null);
+  const [documentErrors, setDocumentErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (user?.email) {
@@ -43,6 +45,19 @@ export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, on
       setExpandedId(highlightAppId);
     }
   }, [highlightAppId]);
+
+  useEffect(() => {
+    const schemeCodes = [...new Set(applications.map((app) => app.scheme_code))];
+    if (schemeCodes.length === 0) return;
+
+    Promise.all(schemeCodes.map((code) => api.getSchemeByCode(code)))
+      .then((schemes) => {
+        setSchemeConfigs(Object.fromEntries(schemes.map((scheme) => [scheme.code, scheme])));
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : 'Failed to load scheme document requirements.');
+      });
+  }, [applications]);
 
   const fetchApplications = async (emailToFetch: string) => {
     setLoading(true);
@@ -69,6 +84,28 @@ export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, on
 
   const toggleExpand = (id: number) => {
     setExpandedId((prev) => (prev === id ? null : id));
+  };
+
+  const handleDocumentResubmission = async (
+    applicationId: number,
+    docType: string,
+    file: File
+  ) => {
+    const key = `${applicationId}:${docType}`;
+    setUploadingDocument(key);
+    setDocumentErrors((previous) => ({ ...previous, [key]: '' }));
+    try {
+      await api.uploadApplicationDocument(applicationId, docType, file);
+      const refreshed = await api.getApplication(applicationId);
+      setApplications((previous) => previous.map((app) => app.id === applicationId ? refreshed : app));
+    } catch (err: unknown) {
+      setDocumentErrors((previous) => ({
+        ...previous,
+        [key]: err instanceof Error ? err.message : 'Document upload failed.'
+      }));
+    } finally {
+      setUploadingDocument(null);
+    }
   };
 
   return (
@@ -215,10 +252,10 @@ export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, on
                                 app.confidence_score >= 80 ? 'text-emerald-900' : 'text-amber-900'
                               }`}
                             >
-                              2. AI Rule Engine
+                              2. Configured Rule Checks
                             </div>
                             <div className="text-[11px] text-slate-600 mt-0.5">
-                              Confidence: <strong>{app.confidence_score}%</strong> (
+                              Rule indicator: <strong>{app.confidence_score}%</strong> (
                               {evalData?.passed_checks?.length || 0} checks passed)
                             </div>
                           </div>
@@ -256,7 +293,7 @@ export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, on
                       <div className="p-4 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-900 space-y-2">
                         <div className="flex items-center gap-2 font-bold text-rose-800">
                           <AlertTriangle className="w-4 h-4 text-rose-600" />
-                          <span>Application Marked as Deficient — Officer Action Required</span>
+                          <span>Application Marked as Deficient — Applicant Action Required</span>
                         </div>
                         {app.admin_remarks && (
                           <div className="bg-white/80 p-2.5 rounded border border-rose-200">
@@ -264,7 +301,7 @@ export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, on
                           </div>
                         )}
                         <p className="text-[11px] text-rose-700">
-                          Please review the AI verification mismatches below and contact the MoTA scholarship desk or resubmit.
+                          Review the reported issues below and upload a clearer or corrected document where requested. Extracted values are preliminary and do not authenticate documents.
                         </p>
                       </div>
                     )}
@@ -273,9 +310,9 @@ export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, on
                     {evalData && (
                       <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3">
                         <div className="flex items-center justify-between border-b pb-2">
-                          <div className="text-xs font-bold text-slate-800">AI Rule Verification Report</div>
+                          <div className="text-xs font-bold text-slate-800">Configured Eligibility Rule Report</div>
                           <div className="text-xs text-slate-500">
-                            Confidence Score: <span className="font-bold text-slate-800">{evalData.confidence_score}%</span>
+                            Rule indicator: <span className="font-bold text-slate-800">{evalData.confidence_score}%</span>
                           </div>
                         </div>
 
@@ -311,7 +348,7 @@ export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, on
                         {evalData.passed_checks?.length > 0 && (
                           <div className="pt-2">
                             <div className="text-xs font-semibold text-emerald-800 mb-1.5">
-                              Verified Compliant Checks:
+                              Checks With No Rule Mismatch:
                             </div>
                             <ul className="space-y-1">
                               {evalData.passed_checks.map((chk, i) => (
@@ -344,27 +381,85 @@ export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, on
                     </div>
 
                     {/* Documents List */}
-                    {app.documents?.length > 0 && (
+                    {(app.documents?.length > 0 || schemeConfigs[app.scheme_code]) && (
                       <div className="bg-white p-4 rounded-xl border border-slate-200">
                         <div className="text-xs font-bold text-slate-800 border-b pb-2 mb-2">
-                          Attached Verification Documents
+                          Documents and OCR Extraction (Not Document Authentication)
                         </div>
-                        <div className="divide-y divide-slate-100 text-xs">
-                          {app.documents.map((d) => (
-                            <div key={d.id} className="py-2 flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <FileText className="w-3.5 h-3.5 text-blue-700" />
-                                <span className="font-medium text-slate-800">{d.file_name}</span>
-                              <span className="text-[10px] text-slate-400">({d.doc_type})</span>
+                        <div className="space-y-3">
+                          {(schemeConfigs[app.scheme_code]?.config.required_documents || app.documents.map((doc) => ({
+                            id: doc.doc_type,
+                            name: doc.doc_type.replace(/_/g, ' '),
+                            required: true,
+                            description: ''
+                          }))).map((requiredDoc) => {
+                            const doc = app.documents.find((item) => item.doc_type === requiredDoc.id);
+                            const key = `${app.id}:${requiredDoc.id}`;
+                            const canResubmit = app.status !== 'APPROVED' && app.status !== 'REJECTED'
+                              && (!doc || doc.ocr_status !== 'SUCCESS' || app.status === 'DEFICIENT');
+                            return (
+                              <div key={requiredDoc.id} className="p-3 rounded-lg border border-slate-200">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <FileText className="w-3.5 h-3.5 text-blue-700" />
+                                    <span className="font-medium text-slate-800 text-xs">{requiredDoc.name}</span>
+                                    {requiredDoc.required && <span className="text-[10px] text-slate-500">Required</span>}
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    {doc && <span className="text-[11px] text-slate-600">{doc.file_name}</span>}
+                                    <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${
+                                      doc?.ocr_status === 'SUCCESS'
+                                        ? 'bg-emerald-50 text-emerald-700'
+                                        : 'bg-amber-50 text-amber-800'
+                                    }`}>{doc?.ocr_status === 'SUCCESS' ? 'FIELDS EXTRACTED' : doc?.ocr_status || 'NOT UPLOADED'}</span>
+                                    {doc?.file_path?.startsWith('/uploads/') && (
+                                      <a href={documentUrl(doc.file_path)} target="_blank" rel="noreferrer" className="text-xs font-semibold text-blue-800 underline">View</a>
+                                    )}
+                                  </div>
+                                </div>
+                                {doc?.extraction_method && (
+                                  <div className="mt-1 text-[10px] text-slate-500">
+                                    Extracted with {doc.extraction_method}
+                                    {doc.ocr_confidence != null && ` · Tesseract confidence ${Math.round(doc.ocr_confidence * 100)}%`}
+                                  </div>
+                                )}
+                                {doc?.parsed_fields && Object.keys(doc.parsed_fields).length > 0 && (
+                                  <div className="mt-2 flex flex-wrap gap-2">
+                                    {Object.entries(doc.parsed_fields).map(([field, value]) => (
+                                      <span key={field} className="text-[10px] bg-blue-50 text-blue-900 px-2 py-1 rounded">
+                                        {field.replace(/_/g, ' ')}: {String(value)}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                                {doc?.failed_reason && <p className="mt-2 text-[11px] text-rose-700">{doc.failed_reason}</p>}
+                                {canResubmit && (
+                                  <label className="mt-2 inline-flex cursor-pointer items-center gap-1.5 rounded border border-slate-300 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50">
+                                    <Upload className="w-3.5 h-3.5" />
+                                    {uploadingDocument === key ? 'Processing…' : doc ? 'Replace and re-run OCR' : 'Upload required document'}
+                                    <input
+                                      type="file"
+                                      accept=".pdf,.png,.jpg,.jpeg,.bmp,.tif,.tiff,.txt"
+                                      className="hidden"
+                                      disabled={uploadingDocument === key}
+                                      onChange={(event) => {
+                                        const file = event.target.files?.[0];
+                                        if (file) void handleDocumentResubmission(app.id, requiredDoc.id, file);
+                                        event.target.value = '';
+                                      }}
+                                    />
+                                  </label>
+                                )}
+                                {documentErrors[key] && <p className="mt-1 text-[11px] text-rose-700">{documentErrors[key]}</p>}
+                                {doc?.extracted_text && (
+                                  <details className="mt-2">
+                                    <summary className="cursor-pointer text-[10px] font-medium text-slate-600">View extracted text</summary>
+                                    <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-slate-50 p-2 text-[10px] text-slate-700">{doc.extracted_text}</pre>
+                                  </details>
+                                )}
                               </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-medium">
-                                  {d.status || 'UPLOADED'}
-                                </span>
-                                {d.file_path?.startsWith('/uploads/') && <a href={documentUrl(d.file_path)} target="_blank" rel="noreferrer" className="text-xs font-semibold text-blue-800 underline">View</a>}
-                              </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     )}

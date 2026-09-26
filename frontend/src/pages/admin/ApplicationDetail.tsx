@@ -149,7 +149,7 @@ export const ApplicationDetail: React.FC<ApplicationDetailProps> = ({
               >
                 {hasErrors
                   ? 'AI Rule Engine: Discrepancies Flagged'
-                  : 'AI Rule Engine: Statutory Compliance Passed'}
+                  : 'No Configured Rule Mismatch — Officer Verification Still Required'}
               </div>
               <div className="text-[11px] text-slate-600">{evalData?.summary}</div>
             </div>
@@ -197,7 +197,7 @@ export const ApplicationDetail: React.FC<ApplicationDetailProps> = ({
         {evalData?.passed_checks && evalData.passed_checks.length > 0 && (
           <div className="pt-3">
             <div className="text-[11px] font-bold text-emerald-900 uppercase tracking-wider mb-1.5">
-              Verified Compliant Rules ({evalData.passed_checks.length}):
+              Checks With No Rule Mismatch ({evalData.passed_checks.length}):
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
               {evalData.passed_checks.map((chk, i) => (
@@ -287,7 +287,7 @@ export const ApplicationDetail: React.FC<ApplicationDetailProps> = ({
           {/* Uploaded Documents List */}
           <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
             <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
-              Attached Statutory Verification Documents ({app.documents?.length || 0})
+              Uploaded Documents — OCR Does Not Authenticate Documents ({app.documents?.length || 0})
             </h4>
 
             {app.documents?.length === 0 ? (
@@ -295,19 +295,49 @@ export const ApplicationDetail: React.FC<ApplicationDetailProps> = ({
             ) : (
               <div className="divide-y divide-slate-100 text-xs">
                 {app.documents.map((d) => (
-                  <div key={d.id} className="py-2.5 flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <FileText className="w-4 h-4 text-blue-800" />
-                      <div>
-                        <div className="font-semibold text-slate-800">{d.file_name}</div>
-                        <div className="text-[11px] text-slate-500">Type: {d.doc_type}</div>
+                  <div key={d.id} className="py-2.5 border-b border-slate-100 last:border-b-0">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <FileText className="w-4 h-4 text-blue-800 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <div className="font-semibold text-slate-800 truncate">{d.file_name}</div>
+                          <div className="text-[11px] text-slate-500">Type: {d.doc_type}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 flex-shrink-0">
+                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded border ${
+                          d.ocr_status === 'SUCCESS'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : d.ocr_status === 'PARTIAL'
+                            ? 'bg-amber-50 text-amber-800 border-amber-200'
+                            : 'bg-rose-50 text-rose-700 border-rose-200'
+                        }`}>{d.ocr_status === 'SUCCESS' ? 'FIELDS EXTRACTED' : `OCR ${d.ocr_status || 'PENDING'}`}</span>
+                        {d.file_path && d.file_path.startsWith('/uploads/') && (
+                          <a href={documentUrl(d.file_path)} target="_blank" rel="noreferrer" className="text-xs font-semibold text-blue-800 underline">View file</a>
+                        )}
                       </div>
                     </div>
-                    <span className="text-[11px] font-medium px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      Uploaded file
-                    </span>
-                    {d.file_path && d.file_path.startsWith('/uploads/') && (
-                      <a href={documentUrl(d.file_path)} target="_blank" rel="noreferrer" className="text-xs font-semibold text-blue-800 underline">View file</a>
+                    {d.extraction_method && (
+                      <div className="mt-1 ml-6 text-[10px] text-slate-500">
+                        {d.extraction_method}
+                        {d.ocr_confidence != null && ` · OCR confidence ${Math.round(d.ocr_confidence * 100)}%`}
+                      </div>
+                    )}
+                    {d.parsed_fields && Object.keys(d.parsed_fields).length > 0 && (
+                      <div className="mt-2 ml-6 flex flex-wrap gap-2">
+                        {Object.entries(d.parsed_fields).map(([field, value]) => (
+                          <span key={field} className="text-[10px] bg-blue-50 text-blue-900 px-2 py-1 rounded">
+                            {field.replace(/_/g, ' ')}: {String(value)}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {d.failed_reason && <p className="mt-1 ml-6 text-[11px] text-rose-700">{d.failed_reason}</p>}
+                    {d.extracted_text && (
+                      <details className="mt-2 ml-6">
+                        <summary className="cursor-pointer text-[10px] font-medium text-slate-600">View extracted text</summary>
+                        <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-slate-50 p-2 text-[10px] text-slate-700">{d.extracted_text}</pre>
+                      </details>
                     )}
                   </div>
                 ))}

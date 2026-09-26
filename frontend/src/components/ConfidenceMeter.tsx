@@ -18,18 +18,18 @@ export const ConfidenceMeter: React.FC<ConfidenceMeterProps> = ({
   let colorClass = 'text-emerald-700 bg-emerald-50 border-emerald-300';
   let barClass = 'bg-emerald-600';
   let icon = <ShieldCheck className="w-4 h-4 text-emerald-600" />;
-  let tierLabel = 'High Confidence';
+  let tierLabel = 'No rule mismatch detected';
 
   if (score < 60) {
     colorClass = 'text-rose-700 bg-rose-50 border-rose-300';
     barClass = 'bg-rose-600';
     icon = <ShieldAlert className="w-4 h-4 text-rose-600" />;
-    tierLabel = 'Flagged Discrepancy';
+    tierLabel = 'Rule issues flagged';
   } else if (score < 85) {
     colorClass = 'text-amber-700 bg-amber-50 border-amber-300';
     barClass = 'bg-amber-500';
     icon = <AlertTriangle className="w-4 h-4 text-amber-600" />;
-    tierLabel = 'Verification Alert';
+    tierLabel = 'Officer review recommended';
   }
 
   if (size === 'sm') {
@@ -37,7 +37,7 @@ export const ConfidenceMeter: React.FC<ConfidenceMeterProps> = ({
       <div className="flex items-center gap-1.5">
         <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-semibold ${colorClass}`}>
           {icon}
-          <span>{rounded}%</span>
+          <span title="Heuristic scheme-rule indicator; not OCR confidence or a probability">{rounded}%</span>
         </div>
       </div>
     );
@@ -50,7 +50,7 @@ export const ConfidenceMeter: React.FC<ConfidenceMeterProps> = ({
           {icon}
           <span className="text-xs font-medium text-slate-700">{tierLabel}</span>
         </div>
-        <span className="text-xs font-bold text-slate-900">{score.toFixed(1)}%</span>
+        <span className="text-xs font-bold text-slate-900" title="Heuristic scheme-rule indicator; not OCR confidence or a probability">{score.toFixed(1)}%</span>
       </div>
       <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
         <div

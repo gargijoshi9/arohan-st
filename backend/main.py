@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
+from sqlalchemy import inspect
 
 # Add backend directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -16,6 +17,7 @@ from utils.seed import seed_schemes, seed_demo_applications
 async def lifespan(app: FastAPI):
     # Initialize database tables
     Base.metadata.create_all(bind=engine)
+    ensure_document_ocr_columns()
     
     # Run database seeder
     db = SessionLocal()
@@ -25,6 +27,23 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
     yield
+
+
+def ensure_document_ocr_columns():
+    columns = {column["name"] for column in inspect(engine).get_columns("documents")}
+    new_columns = {
+        "extracted_text": "TEXT",
+        "ocr_status": "VARCHAR(50)",
+        "ocr_confidence": "FLOAT",
+        "extraction_method": "VARCHAR(50)",
+        "parsed_fields": "TEXT",
+        "failed_reason": "TEXT",
+    }
+    with engine.begin() as connection:
+        for name, column_type in new_columns.items():
+            if name not in columns:
+                connection.exec_driver_sql(f"ALTER TABLE documents ADD COLUMN {name} {column_type}")
+        connection.exec_driver_sql("UPDATE documents SET ocr_status = 'PENDING' WHERE ocr_status IS NULL")
 
 app = FastAPI(
     title="AROHAN-ST Platform API",

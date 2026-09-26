@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { api, documentUrl } from '../../api/client';
-import { Scheme, DocumentItem } from '../../api/types';
+import { api } from '../../api/client';
+import { Scheme } from '../../api/types';
 import { useAuth } from '../../hooks/useAuth';
 import { 
   FileText, 
@@ -31,8 +31,14 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({
 
   // Form states
   const [formData, setFormData] = useState<Record<string, any>>({});
-  const [uploadedDocs, setUploadedDocs] = useState<Record<string, { fileName: string; filePath: string }>>({});
-  const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
+  const [uploadedDocs, setUploadedDocs] = useState<Record<string, {
+    file: File;
+    uploaded: boolean;
+    ocrStatus?: string;
+    parsedFields?: Record<string, any> | null;
+    failedReason?: string | null;
+  }>>({});
+  const [applicationId, setApplicationId] = useState<number | null>(null);
 
   useEffect(() => {
     loadScheme(selectedSchemeCode);
@@ -66,20 +72,26 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleFileUpload = async (docId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (docId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setUploadingDoc(docId);
-    setError(null);
-    try {
-      const result = await api.uploadDocument(file);
-      setUploadedDocs((prev) => ({ ...prev, [docId]: { fileName: result.file_name, filePath: result.file_path } }));
-    } catch (err: any) {
-      setError(err.message || `Failed to upload ${file.name}`);
+    const allowedExtensions = ['.pdf', '.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff', '.txt'];
+    const extension = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+    if (!allowedExtensions.includes(extension)) {
+      setError('Choose a PDF, image, or TXT document.');
       e.target.value = '';
-    } finally {
-      setUploadingDoc(null);
+      return;
     }
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Each document must be 10 MB or smaller.');
+      e.target.value = '';
+      return;
+    }
+    setError(null);
+    setUploadedDocs((prev) => ({
+      ...prev,
+      [docId]: { file, uploaded: false }
+    }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -88,29 +100,52 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({
 
     setSubmitting(true);
     setError(null);
-
+    let targetApplicationId = applicationId;
     try {
-      // Build document array
-      const docPayload: DocumentItem[] = Object.entries(uploadedDocs).map(([docType, fileInfo]) => ({
-        doc_type: docType,
-        file_name: fileInfo.fileName,
-        file_path: fileInfo.filePath,
-        status: 'UPLOADED'
-      }));
+      if (targetApplicationId === null) {
+        const result = await api.submitApplication({
+          scheme_code: scheme.code,
+          full_name: formData.full_name || user?.name || 'Applicant',
+          email: formData.email || user?.email || 'applicant@example.com',
+          phone: formData.phone || '',
+          declared_fields: formData,
+          documents: []
+        });
+        targetApplicationId = result.id;
+        setApplicationId(result.id);
+      }
 
-      const payload = {
-        scheme_code: scheme.code,
-        full_name: formData.full_name || user?.name || 'Applicant',
-        email: formData.email || user?.email || 'applicant@example.com',
-        phone: formData.phone || '',
-        declared_fields: formData,
-        documents: docPayload
-      };
+      const failedUploads: string[] = [];
+      for (const [docType, selected] of Object.entries(uploadedDocs)) {
+        if (selected.uploaded) continue;
+        try {
+          const result = await api.uploadApplicationDocument(targetApplicationId, docType, selected.file);
+          setUploadedDocs((previous) => ({
+            ...previous,
+            [docType]: {
+              ...previous[docType],
+              uploaded: true,
+              ocrStatus: result.ocr_status || 'PENDING',
+              parsedFields: result.parsed_fields,
+              failedReason: result.failed_reason
+            }
+          }));
+        } catch (uploadError) {
+          failedUploads.push(selected.file.name);
+          setUploadedDocs((previous) => ({
+            ...previous,
+            [docType]: { ...previous[docType], uploaded: false }
+          }));
+        }
+      }
 
-      const result = await api.submitApplication(payload);
-      onSubmitSuccess(result.id);
+      if (failedUploads.length) {
+        throw new Error(`Application saved, but these uploads need retrying: ${failedUploads.join(', ')}.`);
+      }
+      onSubmitSuccess(targetApplicationId);
     } catch (err: any) {
       setError(err.message || 'Failed to submit application');
+    } finally {
       setSubmitting(false);
     }
   };
@@ -224,12 +259,12 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({
             <span>Section 2: Document Uploads</span>
           </h3>
           <p className="text-xs text-slate-500 mb-4">
-            Files are stored by the local demo server. You can open each uploaded file with View; OCR is not enabled.
+            Upload PDF or image files. The server extracts document text and shows detected fields after submission.
           </p>
 
           <div className="space-y-3">
             {scheme.config.required_documents?.map((doc) => {
-              const uploaded = uploadedDocs[doc.id];
+              const selected = uploadedDocs[doc.id];
               return (
                 <div
                   key={doc.id}
@@ -248,25 +283,39 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({
                   </div>
 
                   <div className="flex items-center gap-2 w-full sm:w-auto">
-                    {uploaded ? (
-                      <div className="flex items-center gap-2 px-2.5 py-1 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-medium">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                        <span className="truncate max-w-[150px]">{uploaded.fileName}</span>
-                        <a href={documentUrl(uploaded.filePath)} target="_blank" rel="noreferrer" className="underline font-semibold">View</a>
-                      </div>
-                    ) : (
+                    <div className="flex flex-col items-end gap-1.5 w-full sm:w-auto">
+                      {selected && (
+                        <div className={`flex items-center gap-2 px-2.5 py-1 rounded border text-xs font-medium ${
+                          selected.uploaded && selected.ocrStatus === 'SUCCESS'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : selected.uploaded
+                            ? 'bg-amber-50 text-amber-800 border-amber-200'
+                            : 'bg-slate-100 text-slate-700 border-slate-200'
+                        }`}>
+                          {selected.uploaded && selected.ocrStatus === 'SUCCESS' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
+                          <span className="truncate max-w-[180px]">{selected.file.name}</span>
+                          <span>{selected.uploaded ? `OCR ${selected.ocrStatus}` : 'Ready'}</span>
+                        </div>
+                      )}
+                      {selected?.parsedFields && Object.keys(selected.parsedFields).length > 0 && (
+                        <div className="text-[10px] text-slate-600 text-right">
+                          Detected: {Object.entries(selected.parsedFields).map(([key, value]) => `${key.replace(/_/g, ' ')}: ${value}`).join(' · ')}
+                        </div>
+                      )}
+                      {selected?.failedReason && (
+                        <div className="text-[10px] text-rose-700 text-right">{selected.failedReason}</div>
+                      )}
                       <label className="cursor-pointer px-3 py-1.5 rounded bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-medium transition flex items-center gap-1.5">
                         <Upload className="w-3.5 h-3.5 text-slate-500" />
-                        <span>{uploadingDoc === doc.id ? 'Uploading…' : 'Choose File'}</span>
+                        <span>{selected ? 'Replace File' : 'Choose File'}</span>
                         <input
                           type="file"
-                          accept=".pdf,.png,.jpg,.jpeg,.txt"
+                          accept=".pdf,.png,.jpg,.jpeg,.bmp,.tif,.tiff,.txt"
                           className="hidden"
-                          disabled={uploadingDoc === doc.id}
                           onChange={(e) => handleFileUpload(doc.id, e)}
                         />
                       </label>
-                    )}
+                    </div>
                   </div>
                 </div>
               );
@@ -317,7 +366,7 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({
             ) : (
               <>
                 <ShieldCheck className="w-4 h-4 text-amber-400" />
-                <span>Submit for Rule Checks</span>
+                <span>{applicationId ? 'Retry Document Uploads' : 'Submit for Rule Checks'}</span>
               </>
             )}
           </button>

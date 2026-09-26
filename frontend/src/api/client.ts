@@ -1,6 +1,7 @@
 import {
   Scheme,
   Application,
+  DocumentItem,
   ApplicationSubmitPayload,
   AdminDecisionPayload
 } from './types';
@@ -43,10 +44,11 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  uploadDocument: async (file: File): Promise<{ file_name: string; file_path: string }> => {
+  uploadApplicationDocument: async (applicationId: number, docType: string, file: File) => {
     const body = new FormData();
     body.append('file', file);
-    const res = await fetch(`${API_BASE}/documents/upload`, { method: 'POST', body });
+    body.append('doc_type', docType);
+    const res = await fetch(`${API_BASE}/applications/${applicationId}/documents`, { method: 'POST', body });
     if (!res.ok) {
       let message = `Upload failed (${res.status})`;
       try {
@@ -57,7 +59,7 @@ export const api = {
       }
       throw new Error(message);
     }
-    return res.json();
+    return res.json() as Promise<DocumentItem>;
   },
 
   getSchemes: () => request<Scheme[]>('/schemes'),

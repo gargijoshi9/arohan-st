@@ -1,8 +1,21 @@
+# FastAPI Web Framework & Production Server
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
+
+# Database & ORM
 sqlalchemy>=2.0.0
+
+# Data Validation & Models
 pydantic>=2.4.0
+email-validator>=2.0.0
+
+# File Upload Support
 python-multipart>=0.0.6
+
+# Document OCR & PDF / Image Extraction
 pytesseract>=0.3.10
 Pillow>=10.0.0
 PyMuPDF>=1.24.0
+
+# HTTP Client & Testing
+httpx>=0.25.0

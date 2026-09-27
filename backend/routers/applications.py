@@ -6,10 +6,12 @@ from secrets import randbelow
 from typing import List
 from uuid import uuid4
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from database import get_db
-from models import Scheme, Applicant, Application, Document
-from schemas import ApplicationCreate, ApplicationRead, DocumentRead, RuleEvaluation
+from models import Scheme, Applicant, Application, Document, AuditEvent, Notification, Award
+from schemas import ApplicationCreate, ApplicationCorrectionRequest, ApplicationRead, DocumentRead, RuleEvaluation
+from security import Principal, require_applicant, require_principal
 from services.ocr_service import process_document_ocr
 from services.rule_engine import evaluate_application_rules
 
@@ -21,6 +23,25 @@ MAX_FILE_SIZE = 10 * 1024 * 1024
 def generate_application_no(scheme_code: str) -> str:
     return f"AROHAN-{scheme_code.upper()}-{datetime.now().year}-{randbelow(100000):05d}"
 
+
+def get_private_document_url(document: Document) -> str | None:
+    if not document.file_path:
+        return None
+    normalized_path = document.file_path.replace("\\", "/")
+    if normalized_path.startswith("/uploads/"):
+        root = UPLOAD_DIR
+        stored_path = root.joinpath(*Path(normalized_path).parts[2:])
+    elif normalized_path.startswith("/sample-documents/"):
+        root = UPLOAD_DIR.parent.parent / "docs" / "sample-documents"
+        stored_path = root.joinpath(*Path(normalized_path).parts[2:])
+    else:
+        return None
+    resolved = stored_path.resolve()
+    if resolved.is_relative_to(root.resolve()) and resolved.is_file():
+        return f"/private-documents/{document.id}/file"
+    return None
+
+
 def format_application_response(app: Application) -> ApplicationRead:
     declared_dict = json.loads(app.declared_data) if app.declared_data else {}
     ai_eval_dict = json.loads(app.ai_evaluation) if app.ai_evaluation else None
@@ -31,7 +52,7 @@ def format_application_response(app: Application) -> ApplicationRead:
             id=d.id,
             doc_type=d.doc_type,
             file_name=d.file_name,
-            file_path=d.file_path,
+            file_path=get_private_document_url(d),
             status=d.status,
             extracted_text=d.extracted_text,
             ocr_status=d.ocr_status,
@@ -60,23 +81,37 @@ def format_application_response(app: Application) -> ApplicationRead:
         admin_remarks=app.admin_remarks,
         created_at=app.created_at,
         updated_at=app.updated_at,
-        documents=docs
+        documents=docs,
+        merit_score=app.merit_score,
+        selection_rank=app.selection_rank
     )
 
 @router.post("", response_model=ApplicationRead)
-def submit_application(payload: ApplicationCreate, db: Session = Depends(get_db)):
+def submit_application(
+    payload: ApplicationCreate,
+    principal: Principal = Depends(require_applicant),
+    db: Session = Depends(get_db)
+):
     """
     Submit a scholarship/fellowship application.
     Applies configured scheme rules; uploaded documents are OCR-checked after creation.
     """
+    if payload.email.strip().lower() != principal.email:
+        raise HTTPException(status_code=403, detail="Applications can only be submitted for the signed-in account.")
     scheme = db.query(Scheme).filter(Scheme.code == payload.scheme_code.upper()).first()
     if not scheme:
         raise HTTPException(status_code=404, detail=f"Scheme '{payload.scheme_code}' not found")
+    docs_payload = payload.documents or []
+    if docs_payload:
+        raise HTTPException(
+            status_code=422,
+            detail="Submit the application first, then upload each document through the application document endpoint.",
+        )
     
     scheme_config = json.loads(scheme.config_json) if scheme.config_json else {}
     
     # Find or create applicant
-    applicant = db.query(Applicant).filter(Applicant.email == payload.email).first()
+    applicant = db.query(Applicant).filter(func.lower(Applicant.email) == principal.email).first()
     category = payload.declared_fields.get("category", "ST")
     caste_no = payload.declared_fields.get("caste_certificate_no", "")
     try:
@@ -89,7 +124,7 @@ def submit_application(payload: ApplicationCreate, db: Session = Depends(get_db)
     if not applicant:
         applicant = Applicant(
             full_name=payload.full_name,
-            email=payload.email,
+            email=principal.email,
             phone=payload.phone,
             category=category,
             caste_certificate_no=caste_no,
@@ -107,9 +142,7 @@ def submit_application(payload: ApplicationCreate, db: Session = Depends(get_db)
         applicant.annual_income = annual_inc
         db.commit()
 
-    # Convert documents to list of dicts for rule checking
-    docs_payload = payload.documents or []
-    docs_dict_list = [{"doc_type": d.doc_type, "file_name": d.file_name} for d in docs_payload]
+    docs_dict_list = []
 
     # Run AI Rule Engine
     eval_result = evaluate_application_rules(
@@ -124,7 +157,7 @@ def submit_application(payload: ApplicationCreate, db: Session = Depends(get_db)
     initial_status = "SUBMITTED"
     if not eval_result["pass_fail"]:
         initial_status = "DEFICIENT" if any(
-            mismatch["field"].startswith("doc_") for mismatch in eval_result["mismatches"]
+            mismatch["field"].startswith(("doc_", "required_")) for mismatch in eval_result["mismatches"]
         ) else "UNDER_REVIEW"
 
     app_record = Application(
@@ -140,18 +173,14 @@ def submit_application(payload: ApplicationCreate, db: Session = Depends(get_db)
     db.add(app_record)
     db.commit()
     db.refresh(app_record)
-
-    # Save document references
-    for doc in docs_payload:
-        doc_record = Document(
-            application_id=app_record.id,
-            doc_type=doc.doc_type,
-            file_name=doc.file_name,
-            file_path=doc.file_path or f"/uploads/{doc.file_name}",
-            status="UPLOADED"
-        )
-        db.add(doc_record)
-    
+    db.add(AuditEvent(
+        application_id=app_record.id,
+        actor_email=principal.email,
+        actor_role=principal.role,
+        action="APPLICATION_SUBMITTED",
+        to_status=initial_status,
+        remarks="Application received; automated checks are advisory.",
+    ))
     db.commit()
     db.refresh(app_record)
 
@@ -162,14 +191,18 @@ async def upload_document(
     app_id: int,
     file: UploadFile = File(...),
     doc_type: str = Form(...),
+    principal: Principal = Depends(require_applicant),
     db: Session = Depends(get_db)
 ):
     """Store and OCR one required application document, then recalculate its checks."""
     app = db.query(Application).filter(Application.id == app_id).first()
     if not app:
         raise HTTPException(status_code=404, detail="Application not found")
-    if app.status in {"APPROVED", "REJECTED"}:
+    if app.applicant.email.strip().lower() != principal.email:
+        raise HTTPException(status_code=403, detail="This application belongs to another account.")
+    if app.status in {"APPROVED", "REJECTED", "SELECTED", "NOT_SELECTED"}:
         raise HTTPException(status_code=409, detail="Documents cannot be changed after a final decision.")
+    previous_status = app.status
 
     original_name = Path(file.filename or "document").name[:255]
     extension = Path(original_name).suffix.lower()
@@ -320,6 +353,15 @@ async def upload_document(
     else:
         has_partial_ocr = any(stored_doc.ocr_status == "PARTIAL" for stored_doc in all_docs)
         app.status = "UNDER_REVIEW" if not ai_eval["pass_fail"] or has_partial_ocr else "SUBMITTED"
+    db.add(AuditEvent(
+        application_id=app.id,
+        actor_email=principal.email,
+        actor_role=principal.role,
+        action=f"DOCUMENT_UPLOADED_{doc_type.upper()}",
+        from_status=previous_status,
+        to_status=app.status,
+        remarks=f"OCR status: {doc.ocr_status}. OCR findings are advisory.",
+    ))
 
     db.commit()
     db.refresh(doc)
@@ -329,7 +371,7 @@ async def upload_document(
         id=doc.id,
         doc_type=doc.doc_type,
         file_name=doc.file_name,
-        file_path=doc.file_path,
+        file_path=f"/private-documents/{doc.id}/file" if doc.file_path else None,
         status=doc.status,
         extracted_text=doc.extracted_text,
         ocr_status=doc.ocr_status,
@@ -340,25 +382,190 @@ async def upload_document(
         uploaded_at=doc.uploaded_at
     )
 
-@router.get("/{app_id}", response_model=ApplicationRead)
-def get_application_status(app_id: int, db: Session = Depends(get_db)):
+@router.get("/{app_id:int}", response_model=ApplicationRead)
+def get_application_status(
+    app_id: int,
+    principal: Principal = Depends(require_principal),
+    db: Session = Depends(get_db)
+):
     """Retrieve application status, declared data, and AI evaluation report."""
     app = db.query(Application).filter(Application.id == app_id).first()
     if not app:
         raise HTTPException(status_code=404, detail="Application not found")
+    if principal.role == "applicant" and app.applicant.email.strip().lower() != principal.email:
+        raise HTTPException(status_code=403, detail="This application belongs to another account.")
     return format_application_response(app)
 
-@router.get("/applicant/{applicant_id}", response_model=List[ApplicationRead])
-def get_applicant_applications(applicant_id: int, db: Session = Depends(get_db)):
-    """List all applications submitted by an applicant."""
-    apps = db.query(Application).filter(Application.applicant_id == applicant_id).order_by(Application.created_at.desc()).all()
-    return [format_application_response(a) for a in apps]
-
-@router.get("/by-email/{email}", response_model=List[ApplicationRead])
-def get_applications_by_email(email: str, db: Session = Depends(get_db)):
-    """List applications matching applicant email."""
-    applicant = db.query(Applicant).filter(Applicant.email == email).first()
+@router.get("/mine", response_model=List[ApplicationRead])
+def get_my_applications(
+    principal: Principal = Depends(require_applicant),
+    db: Session = Depends(get_db)
+):
+    applicant = db.query(Applicant).filter(Applicant.email == principal.email).first()
     if not applicant:
         return []
     apps = db.query(Application).filter(Application.applicant_id == applicant.id).order_by(Application.created_at.desc()).all()
     return [format_application_response(a) for a in apps]
+
+
+@router.get("/awards")
+def get_my_awards(
+    principal: Principal = Depends(require_applicant),
+    db: Session = Depends(get_db),
+):
+    awards = db.query(Award).join(Application).join(Applicant).filter(
+        Applicant.email == principal.email
+    ).order_by(Award.updated_at.desc()).all()
+    return [{
+        "id": award.id,
+        "application_id": award.application_id,
+        "application_no": award.application.application_no,
+        "scheme_code": award.application.scheme.code if award.application.scheme else "",
+        "award_status": award.award_status,
+        "approved_amount": award.approved_amount,
+        "currency": award.currency,
+        "start_date": award.start_date,
+        "end_date": award.end_date,
+        "next_review_date": award.next_review_date,
+        "officer_remarks": award.officer_remarks,
+        "updated_at": award.updated_at,
+        "payments": [{
+            "id": payment.id,
+            "period": payment.period,
+            "amount": payment.amount,
+            "status": payment.status,
+            "reference": payment.reference,
+            "paid_at": payment.paid_at,
+        } for payment in award.payments],
+    } for award in awards]
+
+
+@router.patch("/{app_id:int}", response_model=ApplicationRead)
+def correct_application(
+    app_id: int,
+    payload: ApplicationCorrectionRequest,
+    principal: Principal = Depends(require_applicant),
+    db: Session = Depends(get_db),
+):
+    app = db.query(Application).filter(Application.id == app_id).first()
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found")
+    if app.applicant.email.strip().lower() != principal.email:
+        raise HTTPException(status_code=403, detail="This application belongs to another account.")
+    if app.status != "DEFICIENT":
+        raise HTTPException(status_code=409, detail="Application corrections are enabled only while deficient.")
+    declared_email = str(payload.declared_fields.get("email", principal.email)).strip().lower()
+    if declared_email != principal.email:
+        raise HTTPException(status_code=422, detail="The registered email cannot be changed.")
+    if not payload.full_name.strip():
+        raise HTTPException(status_code=422, detail="Applicant name cannot be empty.")
+    old_status = app.status
+    declared = dict(payload.declared_fields)
+    declared["full_name"] = payload.full_name.strip()
+    declared["email"] = principal.email
+    declared["phone"] = payload.phone or ""
+    config = json.loads(app.scheme.config_json) if app.scheme and app.scheme.config_json else {}
+    docs = [
+        {"doc_type": d.doc_type, "file_name": d.file_name}
+        for d in app.documents if d.ocr_status in {"SUCCESS", "PARTIAL"}
+    ]
+    evaluation = evaluate_application_rules(app.scheme.code, declared, config, docs)
+    for document in app.documents:
+        if document.ocr_status not in {"SUCCESS", "PARTIAL"} or not document.parsed_fields:
+            continue
+        extracted_fields = json.loads(document.parsed_fields)
+        for field, extracted_value in extracted_fields.items():
+            declared_value = declared.get(field)
+            if declared_value is None or str(declared_value).strip() == "":
+                continue
+            try:
+                values_match = float(declared_value) == float(extracted_value)
+            except (TypeError, ValueError):
+                normalize = lambda value: " ".join(str(value).strip().casefold().split()).removeprefix("the ")
+                values_match = normalize(declared_value) == normalize(extracted_value)
+            if not values_match:
+                evaluation["mismatches"].append({
+                    "field": field,
+                    "label": field.replace("_", " ").title(),
+                    "declared_value": f"Applicant: {declared_value}; document: {extracted_value}",
+                    "expected_rule": "Application details should agree with the uploaded document",
+                    "severity": "ERROR",
+                    "description": "The corrected declaration still differs from the uploaded document; officer review is required.",
+                })
+    error_count = sum(item["severity"] == "ERROR" for item in evaluation["mismatches"])
+    warning_count = sum(item["severity"] == "WARNING" for item in evaluation["mismatches"])
+    evaluation["pass_fail"] = error_count == 0
+    evaluation["confidence_score"] = max(15.0, min(99.0, 98.0 - 20.0 * error_count - 4.0 * warning_count))
+    if error_count or warning_count:
+        evaluation["summary"] = f"Rule checks flagged {error_count} issue(s) and {warning_count} warning(s); officer review required."
+    app.declared_data = json.dumps(declared)
+    app.confidence_score = evaluation["confidence_score"]
+    app.ai_evaluation = json.dumps(evaluation)
+    has_missing_required_items = any(
+        mismatch["field"].startswith(("doc_", "required_"))
+        for mismatch in evaluation["mismatches"]
+    )
+    app.status = "DEFICIENT" if has_missing_required_items or not evaluation["pass_fail"] else "UNDER_REVIEW"
+    app.admin_remarks = ""
+    app.applicant.full_name = payload.full_name.strip()
+    app.applicant.phone = payload.phone or ""
+    app.applicant.category = declared.get("category", app.applicant.category)
+    app.applicant.caste_certificate_no = declared.get("caste_certificate_no", app.applicant.caste_certificate_no)
+    try:
+        applicant_income = declared.get("annual_family_income")
+        app.applicant.annual_income = float(applicant_income) if applicant_income not in (None, "") else None
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="Annual family income must be a number.") from exc
+    if app.applicant.annual_income is not None and not math.isfinite(app.applicant.annual_income):
+        raise HTTPException(status_code=422, detail="Annual family income must be a finite number.")
+    db.add(AuditEvent(
+        application_id=app.id,
+        actor_email=principal.email,
+        actor_role=principal.role,
+        action="APPLICANT_CORRECTION_SUBMITTED",
+        from_status=old_status,
+        to_status=app.status,
+        remarks="Applicant updated declared application details.",
+    ))
+    db.commit()
+    db.refresh(app)
+    return format_application_response(app)
+
+
+@router.get("/notifications")
+def get_my_notifications(
+    principal: Principal = Depends(require_applicant),
+    db: Session = Depends(get_db),
+):
+    applicant = db.query(Applicant).filter(Applicant.email == principal.email).first()
+    if not applicant:
+        return []
+    notifications = db.query(Notification).filter(
+        Notification.applicant_id == applicant.id
+    ).order_by(Notification.created_at.desc()).all()
+    return [{
+        "id": item.id,
+        "application_id": item.application_id,
+        "title": item.title,
+        "message": item.message,
+        "read_at": item.read_at,
+        "created_at": item.created_at,
+    } for item in notifications]
+
+
+@router.post("/notifications/{notification_id:int}/read")
+def mark_notification_read(
+    notification_id: int,
+    principal: Principal = Depends(require_applicant),
+    db: Session = Depends(get_db),
+):
+    notification = db.query(Notification).filter(Notification.id == notification_id).first()
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    owner = db.query(Applicant).filter(Applicant.id == notification.applicant_id).first()
+    if not owner or owner.email.strip().lower() != principal.email:
+        raise HTTPException(status_code=403, detail="This notification belongs to another account.")
+    if notification.read_at is None:
+        notification.read_at = datetime.utcnow()
+        db.commit()
+    return {"id": notification.id, "read_at": notification.read_at}

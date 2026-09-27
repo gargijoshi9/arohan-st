@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { BookOpen, FileEdit, CheckSquare, ShieldAlert, UserCheck } from 'lucide-react';
+import { BookOpen, FileEdit, CheckSquare, ShieldAlert, ListChecks, Award } from 'lucide-react';
 
 interface NavbarProps {
   currentTab: string;
@@ -66,6 +66,24 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, onSelectTab }) => {
                 >
                   <ShieldAlert className="w-4 h-4" />
                   <span>Officer Verification Queue</span>
+                </button>
+                <button
+                  onClick={() => onSelectTab('admin-selection')}
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded-md text-xs sm:text-sm font-medium transition ${
+                    currentTab === 'admin-selection' ? 'bg-emerald-700 text-white shadow' : 'text-emerald-100 hover:bg-emerald-800'
+                  }`}
+                >
+                  <ListChecks className="w-4 h-4" />
+                  <span>Merit & Selection</span>
+                </button>
+                <button
+                  onClick={() => onSelectTab('admin-awards')}
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded-md text-xs sm:text-sm font-medium transition ${
+                    currentTab === 'admin-awards' ? 'bg-emerald-700 text-white shadow' : 'text-emerald-100 hover:bg-emerald-800'
+                  }`}
+                >
+                  <Award className="w-4 h-4" />
+                  <span>Awards & Payments</span>
                 </button>
               </>
             )}

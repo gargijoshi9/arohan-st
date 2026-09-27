@@ -43,6 +43,9 @@ class Application(Base):
     status = Column(String(50), default="SUBMITTED")  # SUBMITTED, UNDER_REVIEW, APPROVED, REJECTED, DEFICIENT
     ai_evaluation = Column(Text, nullable=True)  # JSON string of rule evaluation & mismatches
     admin_remarks = Column(Text, nullable=True)
+    merit_score = Column(Float, nullable=True)
+    selection_rank = Column(Integer, nullable=True)
+    selected_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -68,3 +71,62 @@ class Document(Base):
     uploaded_at = Column(DateTime, default=datetime.utcnow)
 
     application = relationship("Application", back_populates="documents")
+
+
+class AuditEvent(Base):
+    __tablename__ = "audit_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    application_id = Column(Integer, ForeignKey("applications.id"), nullable=False, index=True)
+    actor_email = Column(String(255), nullable=False)
+    actor_role = Column(String(30), nullable=False)
+    action = Column(String(80), nullable=False)
+    from_status = Column(String(50), nullable=True)
+    to_status = Column(String(50), nullable=True)
+    remarks = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    applicant_id = Column(Integer, ForeignKey("applicants.id"), nullable=False, index=True)
+    application_id = Column(Integer, ForeignKey("applications.id"), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    message = Column(Text, nullable=False)
+    read_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class Award(Base):
+    __tablename__ = "awards"
+
+    id = Column(Integer, primary_key=True, index=True)
+    application_id = Column(Integer, ForeignKey("applications.id"), unique=True, nullable=False, index=True)
+    award_status = Column(String(40), default="ACTIVE", nullable=False)
+    approved_amount = Column(Float, nullable=True)
+    currency = Column(String(3), default="INR", nullable=False)
+    start_date = Column(DateTime, nullable=True)
+    end_date = Column(DateTime, nullable=True)
+    next_review_date = Column(DateTime, nullable=True)
+    officer_remarks = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    application = relationship("Application")
+    payments = relationship("AwardPayment", back_populates="award", cascade="all, delete-orphan")
+
+
+class AwardPayment(Base):
+    __tablename__ = "award_payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    award_id = Column(Integer, ForeignKey("awards.id"), nullable=False, index=True)
+    period = Column(String(100), nullable=False)
+    amount = Column(Float, nullable=False)
+    status = Column(String(40), default="PENDING", nullable=False)
+    reference = Column(String(120), nullable=True)
+    paid_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    award = relationship("Award", back_populates="payments")

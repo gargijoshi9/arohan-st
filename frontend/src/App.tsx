@@ -8,6 +8,8 @@ import { StatusTracker } from './pages/applicant/StatusTracker';
 import { ApplicantLogin } from './pages/applicant/ApplicantLogin';
 import { ReviewQueue } from './pages/admin/ReviewQueue';
 import { ApplicationDetail } from './pages/admin/ApplicationDetail';
+import { SelectionDesk } from './pages/admin/SelectionDesk';
+import { AwardManagement } from './pages/admin/AwardManagement';
 import { Landmark, Shield, Award, Users } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -58,12 +60,12 @@ export const App: React.FC = () => {
             <ApplicantLogin onLoginSuccess={() => setCurrentTab('schemes')} />
           </div>
         ) : isAdmin ? (
-          // ADMIN DESK
           currentTab === 'admin-detail' && selectedAppId ? (
-            <ApplicationDetail
-              applicationId={selectedAppId}
-              onBackToQueue={handleBackToQueue}
-            />
+            <ApplicationDetail applicationId={selectedAppId} onBackToQueue={handleBackToQueue} />
+          ) : currentTab === 'admin-selection' ? (
+            <SelectionDesk onSelectApplication={handleSelectAppForReview} />
+          ) : currentTab === 'admin-awards' ? (
+            <AwardManagement />
           ) : (
             <ReviewQueue onSelectApplication={handleSelectAppForReview} />
           )

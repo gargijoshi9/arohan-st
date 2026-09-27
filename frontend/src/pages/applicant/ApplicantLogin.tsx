@@ -14,13 +14,14 @@ export const ApplicantLogin: React.FC<ApplicantLoginProps> = ({ onLoginSuccess }
   const [error, setError] = useState<string | null>(null);
   const isOfficerEmail = email.trim().toLowerCase() === 'motaofficer@gmail.com';
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (loginPortal(name, email, password)) {
+    try {
+      await loginPortal(name, email, password);
       setError(null);
       onLoginSuccess();
-    } else {
-      setError('Incorrect MoTA officer password.');
+    } catch (loginError) {
+      setError(loginError instanceof Error ? loginError.message : 'Sign-in failed.');
     }
   };
 
@@ -65,7 +66,7 @@ export const ApplicantLogin: React.FC<ApplicantLoginProps> = ({ onLoginSuccess }
 
         {isOfficerEmail && (
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Password</label>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Officer Password</label>
             <div className="relative">
               <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
               <input
@@ -79,12 +80,31 @@ export const ApplicantLogin: React.FC<ApplicantLoginProps> = ({ onLoginSuccess }
             </div>
           </div>
         )}
+        {!isOfficerEmail && (
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Demo verification code</label>
+            <div className="relative">
+              <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="password"
+                required
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                placeholder="Enter demo code"
+              />
+            </div>
+            <p className="mt-1 text-[10px] text-slate-500">Local prototype code: 123456. Real OTP delivery is not configured.</p>
+          </div>
+        )}
 
         {error && <p role="alert" className="text-xs text-rose-700">{error}</p>}
 
         <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-600">
           <span className="font-semibold text-slate-700">Scheduled Tribe (ST) Verification:</span>{' '}
-          In this prototype, applicant category is defaulted to ST with mock AI document rule verification.
+          Prototype sign-in uses a server-validated demo code. It does not verify identity or ST certificates.
         </div>
 
         <button

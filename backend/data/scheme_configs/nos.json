@@ -23,6 +23,11 @@
       "Post-Doctoral Research": 38
     }
   },
+  "selection_config": {
+    "ranking_mode": "DECLARED_MARKS_ADVISORY",
+    "ranking_field": "qualifying_percentage",
+    "criteria_note": "Qualifying percentage is an indicative ordering aid only; applicable exceptions, current QS ranking, quota and selection committee decisions require officer verification."
+  },
   "validation_rules": [
     {
       "field": "category",

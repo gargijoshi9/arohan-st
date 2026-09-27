@@ -24,6 +24,20 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, className = ''
           <span>Approved</span>
         </span>
       );
+    case 'SELECTED':
+      return (
+        <span className={`inline-flex items-center rounded-full bg-indigo-50 text-indigo-700 border border-indigo-300 ${sizeClasses} ${className}`}>
+          <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600" />
+          <span>Selected — pending approval</span>
+        </span>
+      );
+    case 'NOT_SELECTED':
+      return (
+        <span className={`inline-flex items-center rounded-full bg-slate-100 text-slate-700 border border-slate-300 ${sizeClasses} ${className}`}>
+          <XCircle className="w-3.5 h-3.5 text-slate-500" />
+          <span>Not Selected</span>
+        </span>
+      );
     case 'SUBMITTED':
       return (
         <span className={`inline-flex items-center rounded-full bg-blue-50 text-blue-700 border border-blue-200 ${sizeClasses} ${className}`}>

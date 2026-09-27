@@ -13,14 +13,14 @@
 4. **Post-Matric Scholarship**: Centrally Sponsored support for eligible recognized post-secondary courses.
 5. **Pre-Matric Scholarship**: Centrally Sponsored support for eligible ST school students.
 
-The prototype combines configurable eligibility rules with applicant and officer interfaces. PDF text extraction and Tesseract OCR for scanned PDFs/images save extracted text and supported fields for review. OCR and rule results are preliminary: they do not authenticate documents or make final award decisions, and human review remains required.
+The prototype combines configurable eligibility checks, PDF/image OCR, applicant correction and tracking, and officer review. It includes signed demo sessions with role/ownership checks, private application-document access, decision/audit and notification records, an advisory marks-based ranking desk, scheme dashboard/CSV reporting, and award/payment milestone tracking. OCR, automated checks, and ranking are administrative aids only: they do not authenticate documents, establish entitlement, or make final award decisions.
 
 ## Demo Login Credentials
 
-- **Demo applicant:** Name `Ramesh Chandra Munda`, email `ramesh.munda@example.edu`. Applicant login uses name and email only; there is no applicant password in this demo.
-- **MoTA officer (same ST Scholar Portal form):** Enter username/email `MotaOfficer@gmail.com`; the password field appears in that form. Password: `MotaOfficer`. The name field is optional for the officer.
+- **Demo applicant:** Name `Ramesh Chandra Munda`, email `ramesh.munda@example.edu`, demo verification code `123456`.
+- **MoTA officer (same ST Scholar Portal form):** Enter username/email `MotaOfficer@gmail.com`; the password field appears in that form. Local default demo password: `MotaOfficer`. The name field is optional for the officer.
 
-These are prototype credentials and are not suitable for production deployment. Login checks are demo-only and are not backed by secure server-side identity/authentication.
+The backend validates login and issues an expiring signed session token; routes enforce applicant/officer roles and applicant ownership. The default applicant code is shared by design and the default officer password is public in this demo, so these are **not real identity verification or production credentials**. Set `AUTH_SECRET`, `DEMO_ADMIN_EMAIL`, `DEMO_ADMIN_PASSWORD`, and `DEMO_APPLICANT_OTP` in the backend process environment before running. Do not use real applicant information or expose the prototype publicly.
 
 ---
 
@@ -30,7 +30,8 @@ These are prototype credentials and are not suitable for production deployment. 
 arohan-st/
 ├── backend/
 │   ├── database.py                   # SQLite + SQLAlchemy configuration
-│   ├── main.py                       # FastAPI application entrypoint & CORS
+│   ├── main.py                       # FastAPI entrypoint, schema setup & CORS
+│   ├── security.py                   # Signed demo bearer sessions and role checks
 │   ├── requirements.txt              # Backend dependencies
 │   ├── models/
 │   │   ├── __init__.py
@@ -42,14 +43,16 @@ arohan-st/
 │   │   ├── __init__.py
 │   │   ├── schemes.py                # GET /schemes, GET /schemes/{id}
 │   │   ├── applications.py           # POST /applications, GET /applications/{id}
-│   │   ├── admin.py                  # GET /admin/queue, POST /admin/applications/{id}/decision
-│   │   └── documents.py              # Local document upload endpoint
+│   │   ├── admin.py                  # Review, audit, ranking, dashboard, reports & awards
+│   │   ├── auth.py                   # Demo login endpoint
+│   │   └── private_documents.py      # Applicant-owned/officer-authorized file access
 │   ├── services/
 │   │   ├── __init__.py
 │   │   ├── rule_engine.py            # Configured eligibility checks
 │   │   └── ocr_service.py            # PDF/image text extraction and document field parsing
 │   ├── tests/
-│   │   └── test_ocr_service.py       # OCR profile and sample parsing tests
+│   │   ├── test_ocr_service.py       # OCR profile and sample parsing tests
+│   │   └── test_security.py          # Signed session and role guard tests
 │   ├── utils/
 │   │   ├── __init__.py
 │   │   └── seed.py                   # Database seeder (schemes & realistic demo cases)
@@ -84,8 +87,10 @@ arohan-st/
 │           │   ├── ApplicationForm.tsx   # Dynamic scheme form & doc upload
 │           │   └── StatusTracker.tsx     # Stage timeline & mismatch report
 │           └── admin/
-│               ├── ReviewQueue.tsx       # Queue sorted by confidence score
-│               └── ApplicationDetail.tsx # Discrepancy highlights & action buttons
+│               ├── ReviewQueue.tsx       # Review dashboard, reports and queue
+│               ├── ApplicationDetail.tsx # Decision, documents and audit history
+│               ├── SelectionDesk.tsx     # Advisory marks ranking and human review
+│               └── AwardManagement.tsx   # Award lifecycle and payment milestones
 └── docs/
     └── sample-documents/             # Sample verified certificate files for demo testing
         ├── st_caste_certificate_sample.txt
@@ -111,23 +116,34 @@ arohan-st/
 cd backend
 
 # Create virtual environment (if not already created)
-python3 -m venv venv
-source venv/bin/activate
+python -m venv venv
+.\venv\Scripts\Activate.ps1
 
 # Install dependencies
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
+
+# Optional: use non-default demo secrets in this PowerShell session.
+$bytes = New-Object byte[] 48
+[System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+$env:AUTH_SECRET = [Convert]::ToBase64String($bytes)
+$env:DEMO_ADMIN_EMAIL = "motaofficer@gmail.com"
+$env:DEMO_ADMIN_PASSWORD = "MotaOfficer"
+$env:DEMO_APPLICANT_OTP = "123456"
 
 # Start the FastAPI server
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 The backend starts at `http://localhost:8000`.
 - Interactive API Docs (Swagger): `http://localhost:8000/docs`
-- On startup, the database is automatically created (`arohan.db`) and pre-seeded with scheme configs and 4 realistic demo applications.
+- On startup, the database is automatically created (`arohan.db`) and pre-seeded with scheme configs and realistic demo applications. Existing SQLite databases receive additive workflow-column migrations.
 - On Windows, verify OCR installation with `tesseract --version`. If it is not on PATH, set `TESSERACT_CMD` to the full path to `tesseract.exe` before starting the backend.
 - Windows install command: `winget install --id UB-Mannheim.TesseractOCR --exact`
 - Tesseract uses English (`eng`) by default; set `TESSERACT_LANG` (for example, `eng+hin`) only after installing the corresponding trained language data.
 - OCR is a preliminary aid: detected values and confidence are not proof of authenticity or eligibility. Unparsed or conflicting details remain for officer review.
+- Applicant code and officer password above are local demonstration values. Real OTP delivery, applicant identity proofing and officer identity federation are not implemented.
+
+Run the backend checks with `python -m unittest discover -s tests -v` from `backend/`, and the frontend type-check/build with `npm run build` from `frontend/`.
 
 ---
 
@@ -159,7 +175,7 @@ Scheme forms and validation rules are stored in `backend/data/scheme_configs/*.j
 - **Post-Matric**: ST category, ₹2.5 lakh income ceiling (orphan exception), recognized course/institution, no concurrent scholarship, and Top Class duplication check.
 - **Pre-Matric**: ST category, ₹2.5 lakh income ceiling (orphan exception), eligible school/class, no concurrent scholarship, and no repeat award for the same class.
 
-These checks only evaluate applicant declarations and document-upload entries. Current institute lists, disability/PVTG proof, certificates and admissions still need an authorized officer to verify. The PDFs describe merit lists, quotas and review committee decisions that are not automatic in this prototype. The two supplied `GuidelinesFellowshipandScholarship2022` PDFs are identical copies. The supplied scheme guidelines are implemented as given; confirm current amendments and State/UT rules before production use. OCR/document extraction is intentionally deferred.
+These checks only evaluate applicant declarations and document-upload entries. Current institute lists, disability/PVTG proof, certificates and admissions still need an authorized officer to verify. The ranking aid sorts by a configured marks field and basic checks; it does not implement official quotas, category rosters, committee decisions or real-time scheme-specific merit rules. The two supplied `GuidelinesFellowshipandScholarship2022` PDFs are identical copies. Confirm current amendments and State/UT rules before production use.
 
 ## 🚀 Live Demo Walkthrough (Hackathon Presentation Script)
 
@@ -192,28 +208,45 @@ Use the demo applicant and officer login credentials above to access the corresp
 3. Click **Review** on any application:
    - View side-by-side comparison of applicant declared parameters vs statutory scheme rules.
    - View rule discrepancies highlighted with exact error tags.
-   - Use the **Officer Adjudication Desk** to enter decision remarks and click **`Approve Fellowship Award`**, **`Request Resubmission (Deficient)`**, or **`Reject Application`**.
-   - Status updates in real-time across both officer and applicant portals.
+   - Use the **Officer Adjudication Desk** to enter a reason and record selection, not-selected, approval, deficiency, or rejection. Every action is recorded in the audit trail; decisions create applicant in-app notifications.
+   - The **Merit & Selection** tab shows the configured-marks ranking aid and opens each application for human review. It does not apply statutory quotas or choose winners automatically.
+   - The **Awards & Payments** tab records an approved award's lifecycle, dates, amount, and manual payment milestones. It does not transfer funds.
+   - The applicant tracker supports detail corrections while deficient, secure document viewing, notifications, and award/payment status.
+   - The dashboard includes per-scheme workflow counts and an authenticated CSV report.
 
 ---
 
 ## 📡 REST API Reference
 
+All application, officer, award, notification, and private-document routes require a bearer session returned by `POST /auth/login`. Applicant routes only expose records belonging to the signed-in applicant. The scheme catalogue and health endpoints are public.
+
 | Method | Endpoint | Description |
 |---|---|---|
+| `POST` | `/auth/login` | Issue an expiring signed demo session (applicant demo code or officer password) |
 | `GET` | `/schemes` | List all active fellowship and scholarship schemes |
 | `GET` | `/schemes/{id}` | Get scheme criteria and dynamic form configuration |
 | `GET` | `/schemes/code/{code}` | Get scheme by code (`NFST` or `NOS`) |
-| `POST` | `/applications` | Submit application and trigger AI rule verification |
-| `GET` | `/applications/{id}` | Get application status, declared data, and AI audit report |
-| `GET` | `/applications/by-email/{email}` | List applications for an applicant email |
-| `GET` | `/admin/queue` | List applications sorted by `confidence_score` or date |
-| `POST` | `/admin/applications/{id}/decision` | Officer action (`APPROVE`, `REJECT`, `DEFICIENT`) |
-| `POST` | `/documents/upload` | Store a PDF, image, or TXT document (maximum 10 MB) and return a view path |
-| `GET` | `/uploads/{stored-file}` | View a stored uploaded document |
+| `POST` | `/applications` | Submit an application for the signed-in applicant |
+| `POST` | `/applications/{id}/documents` | Upload and OCR an application document (maximum 10 MB) |
+| `GET` | `/applications/mine` | List the signed-in applicant's applications |
+| `GET` | `/applications/{id}` | Get an owned application or officer-authorized application detail |
+| `PATCH` | `/applications/{id}` | Correct a deficient application and return it for officer review |
+| `GET` | `/applications/notifications` | List applicant notifications |
+| `POST` | `/applications/notifications/{id}/read` | Mark an owned notification as read |
+| `GET` | `/applications/awards` | List the signed-in applicant's approved award records |
+| `GET` | `/admin/queue` | Officer-only application review queue |
+| `POST` | `/admin/applications/{id}/decision` | Record a reasoned officer selection/approval/deficiency/rejection |
+| `GET` | `/admin/applications/{id}/audit` | View workflow audit history |
+| `GET` | `/admin/selection` | Officer-only marks-based advisory ranking |
+| `GET` | `/admin/dashboard` | Officer dashboard aggregates |
+| `GET` | `/admin/report.csv` | Download officer-only CSV report |
+| `GET` | `/admin/awards` | Officer award and payment overview |
+| `PUT` | `/admin/applications/{id}/award` | Update award lifecycle and sanction tracking details |
+| `POST` | `/admin/awards/{id}/payments` | Add a manual payment milestone |
+| `GET` | `/private-documents/{id}/file` | Access a document only as its applicant or an officer |
 | `GET` | `/health` | Health check endpoint |
 
-Uploaded files are stored under `backend/uploads/` and linked to submitted applications. The local demo server serves these files directly so applicants and officers can open them. This prototype does not authenticate document access; do not expose it to the public internet or use real sensitive documents until access controls are added.
+Uploaded files are stored under `backend/uploads/` and are not served as a public static directory. Notifications are in-app only; email/SMS delivery, real applicant OTP identity verification, production officer identity federation, official selection rosters/quotas, and treasury/DBT integration remain outside this prototype. Use a unique strong `AUTH_SECRET` and non-demo credentials outside local demonstration, and do not treat this prototype's controls as a production security certification.
 
 ---
 

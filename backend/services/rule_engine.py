@@ -16,6 +16,25 @@ def evaluate_application_rules(
     mismatches: List[Dict[str, Any]] = []
     passed_checks: List[str] = []
     checks = scheme_config.get("validation_rules", [])
+    configured_fields = {
+        field.get("name"): field
+        for field in scheme_config.get("form_fields", [])
+        if isinstance(field, dict) and field.get("name")
+    }
+
+    for field_name, field_config in configured_fields.items():
+        if not field_config.get("required"):
+            continue
+        value = declared_fields.get(field_name)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            mismatches.append({
+                "field": f"required_{field_name}",
+                "label": field_config.get("label", field_name.replace("_", " ").title()),
+                "declared_value": "Not provided",
+                "expected_rule": "Required field in the configured application form",
+                "severity": "ERROR",
+                "description": f"Required application information is missing: {field_config.get('label', field_name)}.",
+            })
 
     for rule in checks:
         field = rule["field"]

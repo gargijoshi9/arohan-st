@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 
 class SchemeBase(BaseModel):
     code: str
@@ -79,6 +79,8 @@ class ApplicationRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     documents: List[DocumentRead] = []
+    merit_score: Optional[float] = None
+    selection_rank: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -86,6 +88,55 @@ class ApplicationRead(BaseModel):
 class AdminDecisionRequest(BaseModel):
     decision: str  # APPROVE, REJECT, DEFICIENT, UNDER_REVIEW
     remarks: Optional[str] = ""
+
+class DocumentVerificationRequest(BaseModel):
+    decision: str
+    remarks: str
+
+class ApplicationCorrectionRequest(BaseModel):
+    full_name: str
+    phone: Optional[str] = ""
+    declared_fields: Dict[str, Any]
+
+class LoginRequest(BaseModel):
+    role: str
+    email: str
+    name: Optional[str] = ""
+    password: Optional[str] = ""
+    otp: Optional[str] = ""
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    role: str
+    email: str
+    name: str
+
+class AwardUpdateRequest(BaseModel):
+    award_status: str
+    approved_amount: Optional[float] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    next_review_date: Optional[datetime] = None
+    officer_remarks: Optional[str] = ""
+
+class PaymentCreateRequest(BaseModel):
+    period: str
+    amount: float
+    status: str = "PENDING"
+    reference: Optional[str] = None
+
+class NotificationRead(BaseModel):
+    id: int
+    application_id: int
+    title: str
+    message: str
+    read_at: Optional[datetime] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
 
 class ApplicantRead(BaseModel):
     id: int

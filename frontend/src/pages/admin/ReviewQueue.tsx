@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
-import { Application } from '../../api/types';
+import { Application, DashboardSummary } from '../../api/types';
 import { StatusBadge } from '../../components/StatusBadge';
 import { ConfidenceMeter } from '../../components/ConfidenceMeter';
 import { 
@@ -30,10 +30,24 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({ onSelectApplication })
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [schemeFilter, setSchemeFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [dashboard, setDashboard] = useState<DashboardSummary | null>(null);
+  const [reportError, setReportError] = useState('');
 
   useEffect(() => {
     fetchQueue();
+    api.getDashboard().then(setDashboard).catch((err: unknown) => {
+      setReportError(err instanceof Error ? err.message : 'Dashboard metrics are unavailable.');
+    });
   }, [sortBy, order, statusFilter, schemeFilter]);
+
+  const handleReportDownload = async () => {
+    setReportError('');
+    try {
+      await api.downloadReport();
+    } catch (err: unknown) {
+      setReportError(err instanceof Error ? err.message : 'Report download failed.');
+    }
+  };
 
   const fetchQueue = async () => {
     setLoading(true);
@@ -65,8 +79,6 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({ onSelectApplication })
 
   // Calculate quick metrics
   const totalCount = applications.length;
-  const flaggedCount = applications.filter((a) => a.confidence_score < 60).length;
-  const highConfidenceCount = applications.filter((a) => a.confidence_score >= 80).length;
   const approvedCount = applications.filter((a) => a.status === 'APPROVED').length;
 
   return (
@@ -100,35 +112,53 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({ onSelectApplication })
       {/* Metric Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-          <div className="text-[11px] font-semibold text-slate-500 uppercase">Total in Queue</div>
-          <div className="text-2xl font-bold text-slate-900 mt-1">{totalCount}</div>
-          <div className="text-[11px] text-slate-400 mt-0.5">Active scheme submissions</div>
+          <div className="text-[11px] font-semibold text-slate-500 uppercase">Total Applications</div>
+          <div className="text-2xl font-bold text-slate-900 mt-1">{dashboard?.total_applications ?? totalCount}</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">Across all configured schemes</div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-rose-200 bg-rose-50/20 shadow-sm">
           <div className="text-[11px] font-semibold text-rose-700 uppercase flex items-center justify-between">
-            <span>Flagged by Rules</span>
+            <span>Deficiency Actions</span>
             <AlertTriangle className="w-4 h-4 text-rose-600" />
           </div>
-          <div className="text-2xl font-bold text-rose-700 mt-1">{flaggedCount}</div>
-          <div className="text-[11px] text-rose-600 mt-0.5">Score &lt; 60% (Action Needed)</div>
+          <div className="text-2xl font-bold text-rose-700 mt-1">{dashboard?.by_status.DEFICIENT ?? 0}</div>
+          <div className="text-[11px] text-rose-600 mt-0.5">Applicant action requested</div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-emerald-200 bg-emerald-50/20 shadow-sm">
           <div className="text-[11px] font-semibold text-emerald-700 uppercase flex items-center justify-between">
-            <span>Fewer Rule Flags</span>
+            <span>Pending Review</span>
             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
           </div>
-          <div className="text-2xl font-bold text-emerald-700 mt-1">{highConfidenceCount}</div>
-          <div className="text-[11px] text-emerald-600 mt-0.5">Score &ge; 80% (Fast-track eligible)</div>
+          <div className="text-2xl font-bold text-emerald-700 mt-1">{(dashboard?.by_status.SUBMITTED ?? 0) + (dashboard?.by_status.UNDER_REVIEW ?? 0)}</div>
+          <div className="text-[11px] text-emerald-600 mt-0.5">Manual verification is required</div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-          <div className="text-[11px] font-semibold text-slate-500 uppercase">Approved Awards</div>
-          <div className="text-2xl font-bold text-slate-900 mt-1">{approvedCount}</div>
-          <div className="text-[11px] text-slate-400 mt-0.5">Officially ratified by MoTA</div>
+          <div className="text-[11px] font-semibold text-slate-500 uppercase">Active Awards</div>
+          <div className="text-2xl font-bold text-slate-900 mt-1">{dashboard?.active_awards ?? approvedCount}</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">{dashboard?.pending_payments ?? 0} payment records pending</div>
         </div>
       </div>
+
+      <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div><h3 className="font-bold text-sm text-slate-900">Scheme performance summary</h3><p className="text-[11px] text-slate-500">Aggregated workflow counts for operational monitoring.</p></div>
+          <button onClick={() => void handleReportDownload()} className="px-3 py-2 rounded-lg border border-blue-200 text-blue-900 text-xs font-semibold hover:bg-blue-50">Download CSV report</button>
+        </div>
+        {reportError && <p role="alert" className="text-xs text-rose-700 mb-2">{reportError}</p>}
+        <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-2">
+          {Object.entries(dashboard?.by_scheme || {}).map(([code, counts]) => (
+            <div key={code} className="rounded-lg bg-slate-50 border p-3 text-xs">
+              <div className="font-bold text-blue-950">{code}</div>
+              <div className="mt-1 text-slate-600">{counts.total} applications</div>
+              <div className="text-slate-500">{counts.approved} approved · {counts.deficient} deficient · {counts.under_review} pending</div>
+            </div>
+          ))}
+          {!dashboard && <p className="text-xs text-slate-500">Loading dashboard metrics…</p>}
+        </div>
+      </section>
 
       {/* Filters Bar */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-3 text-xs">
@@ -174,6 +204,8 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({ onSelectApplication })
               <option value="SUBMITTED">Submitted</option>
               <option value="UNDER_REVIEW">Under Review</option>
               <option value="APPROVED">Approved</option>
+              <option value="SELECTED">Selected — Pending Approval</option>
+              <option value="NOT_SELECTED">Not Selected</option>
               <option value="DEFICIENT">Deficient</option>
               <option value="REJECTED">Rejected</option>
             </select>

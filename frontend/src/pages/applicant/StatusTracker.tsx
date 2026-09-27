@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { api, documentUrl } from '../../api/client';
-import { Application, Scheme } from '../../api/types';
+import { api } from '../../api/client';
+import { Application, AwardItem, NotificationItem, Scheme } from '../../api/types';
 import { useAuth } from '../../hooks/useAuth';
 import { StatusBadge } from '../../components/StatusBadge';
 import { ConfidenceMeter } from '../../components/ConfidenceMeter';
 import { 
-  Search, 
   CheckCircle2, 
   Clock, 
   AlertTriangle, 
@@ -25,18 +24,23 @@ interface StatusTrackerProps {
 export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, onApplyNew }) => {
   const { user } = useAuth();
   const [applications, setApplications] = useState<Application[]>([]);
-  const [searchEmail, setSearchEmail] = useState<string>(user?.email || '');
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(highlightAppId || null);
   const [schemeConfigs, setSchemeConfigs] = useState<Record<string, Scheme>>({});
   const [uploadingDocument, setUploadingDocument] = useState<string | null>(null);
   const [documentErrors, setDocumentErrors] = useState<Record<string, string>>({});
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [awards, setAwards] = useState<AwardItem[]>([]);
+  const [correctionDrafts, setCorrectionDrafts] = useState<Record<number, { full_name: string; phone: string; declared_fields: Record<string, unknown> }>>({});
+  const [correctionError, setCorrectionError] = useState<Record<number, string>>({});
+  const [savingCorrection, setSavingCorrection] = useState<number | null>(null);
 
   useEffect(() => {
     if (user?.email) {
-      setSearchEmail(user.email);
-      fetchApplications(user.email);
+      void fetchApplications();
+      api.getNotifications().then(setNotifications).catch((err: unknown) => setError(err instanceof Error ? err.message : 'Could not load notifications.'));
+      api.getMyAwards().then(setAwards).catch((err: unknown) => setError(err instanceof Error ? err.message : 'Could not load award records.'));
     }
   }, [user]);
 
@@ -59,12 +63,17 @@ export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, on
       });
   }, [applications]);
 
-  const fetchApplications = async (emailToFetch: string) => {
+  const fetchApplications = async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await api.getApplicationsByEmail(emailToFetch);
+      const data = await api.getMyApplications();
       setApplications(data);
+      setCorrectionDrafts(Object.fromEntries(data.map((app) => [app.id, {
+        full_name: app.applicant_name,
+        phone: String(app.declared_data.phone || ''),
+        declared_fields: { ...app.declared_data }
+      }])));
       if (data.length > 0 && !expandedId) {
         setExpandedId(data[0].id);
       }
@@ -72,13 +81,6 @@ export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, on
       setError(err.message || 'Failed to fetch application status');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (searchEmail.trim()) {
-      fetchApplications(searchEmail.trim());
     }
   };
 
@@ -108,9 +110,34 @@ export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, on
     }
   };
 
+  const submitCorrection = async (app: Application) => {
+    const draft = correctionDrafts[app.id];
+    if (!draft) return;
+    setSavingCorrection(app.id);
+    setCorrectionError((old) => ({ ...old, [app.id]: '' }));
+    try {
+      const updated = await api.correctApplication(app.id, draft);
+      setApplications((old) => old.map((item) => item.id === app.id ? updated : item));
+      setCorrectionDrafts((old) => ({ ...old, [app.id]: { ...draft, declared_fields: { ...updated.declared_data } } }));
+    } catch (err: unknown) {
+      setCorrectionError((old) => ({ ...old, [app.id]: err instanceof Error ? err.message : 'Could not submit corrections.' }));
+    } finally {
+      setSavingCorrection(null);
+    }
+  };
+
+  const markRead = async (notification: NotificationItem) => {
+    try {
+      await api.markNotificationRead(notification.id);
+      setNotifications((items) => items.map((item) => item.id === notification.id ? { ...item, read_at: new Date().toISOString() } : item));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not update notification.');
+    }
+  };
+
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
-      {/* Header & Search */}
+      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
           <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Application Status & AI Audit Tracker</h2>
@@ -119,25 +146,34 @@ export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, on
           </p>
         </div>
 
-        <form onSubmit={handleSearchSubmit} className="flex items-center gap-2 max-w-sm w-full">
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-            <input
-              type="email"
-              value={searchEmail}
-              onChange={(e) => setSearchEmail(e.target.value)}
-              placeholder="Search by registered email..."
-              className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
-            />
-          </div>
-          <button
-            type="submit"
-            className="px-3 py-2 bg-blue-900 text-white rounded-lg text-xs font-semibold hover:bg-blue-800 transition"
-          >
-            Track
-          </button>
-        </form>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-slate-600">Signed in as <strong>{user?.email}</strong></span>
+          <button onClick={() => void fetchApplications()} className="px-3 py-2 bg-blue-900 text-white rounded-lg text-xs font-semibold hover:bg-blue-800 transition">Refresh</button>
+        </div>
       </div>
+
+      {notifications.length > 0 && <section className="mb-6 bg-white rounded-xl border border-slate-200 p-4">
+        <h3 className="text-sm font-bold text-slate-900 mb-2">Application notifications</h3>
+        <div className="space-y-2">{notifications.map((notification) => <div key={notification.id} className={`p-3 rounded-lg border ${notification.read_at ? 'bg-slate-50 border-slate-200' : 'bg-blue-50 border-blue-200'}`}>
+          <div className="flex items-start justify-between gap-3"><div><div className="text-xs font-bold">{notification.title} · #{notification.application_id}</div><p className="text-xs text-slate-700 mt-1">{notification.message}</p><p className="text-[10px] text-slate-500 mt-1">{new Date(notification.created_at).toLocaleString()}</p></div>
+          {!notification.read_at && <button onClick={() => void markRead(notification)} className="text-[11px] font-semibold text-blue-800 underline">Mark read</button>}</div>
+        </div>)}</div>
+      </section>}
+
+      {awards.length > 0 && <section className="mb-6 bg-emerald-50 rounded-xl border border-emerald-200 p-4">
+        <h3 className="text-sm font-bold text-emerald-950 mb-2">Award and fellowship status</h3>
+        <div className="space-y-2">{awards.map((award) => <div key={award.id} className="bg-white p-3 rounded-lg border border-emerald-100 text-xs">
+          <strong>{award.application_no} · {award.scheme_code}</strong> — {award.award_status}
+          {award.approved_amount != null && <span> · Approved amount: {award.currency} {award.approved_amount.toLocaleString()}</span>}
+          {(award.start_date || award.end_date || award.next_review_date) && <div className="text-slate-600 mt-1">
+            {award.start_date && `Start: ${new Date(award.start_date).toLocaleDateString()} · `}
+            {award.end_date && `End: ${new Date(award.end_date).toLocaleDateString()} · `}
+            {award.next_review_date && `Next review: ${new Date(award.next_review_date).toLocaleDateString()}`}
+          </div>}
+          <div className="text-slate-600 mt-1">{award.payments.length} payment milestone(s); actual disbursement occurs outside this prototype.</div>
+          {award.payments.length > 0 && <ul className="mt-1 space-y-1">{award.payments.map((payment) => <li key={payment.id}>{payment.period}: {award.currency} {payment.amount.toLocaleString()} — {payment.status}</li>)}</ul>}
+        </div>)}</div>
+      </section>}
 
       {loading ? (
         <div className="text-center py-12">
@@ -153,7 +189,7 @@ export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, on
           <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
           <h3 className="text-sm font-bold text-slate-800">No Applications Found</h3>
           <p className="text-xs text-slate-500 mt-1 mb-4">
-            No active fellowship or scholarship submissions found for <code>{searchEmail}</code>.
+            No applications are linked to <code>{user?.email}</code>.
           </p>
           <button
             onClick={onApplyNew}
@@ -306,6 +342,33 @@ export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, on
                       </div>
                     )}
 
+                    {app.status === 'DEFICIENT' && correctionDrafts[app.id] && (
+                      <form onSubmit={(event) => { event.preventDefault(); void submitCorrection(app); }} className="bg-white rounded-xl border border-amber-300 p-4 space-y-3">
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-900">Correct application details and resubmit</h3>
+                          <p className="text-[11px] text-slate-600 mt-1">Update inaccurate declared values. Replace documents separately below. Resubmission returns the application to officer review; it does not imply approval.</p>
+                        </div>
+                        <div className="grid sm:grid-cols-2 gap-3">
+                          <label className="text-xs font-semibold">Applicant name<input required value={correctionDrafts[app.id].full_name} onChange={(event) => setCorrectionDrafts((old) => ({ ...old, [app.id]: { ...correctionDrafts[app.id], full_name: event.target.value } }))} className="block mt-1 w-full border rounded px-2 py-2" /></label>
+                          <label className="text-xs font-semibold">Phone<input value={correctionDrafts[app.id].phone} onChange={(event) => setCorrectionDrafts((old) => ({ ...old, [app.id]: { ...correctionDrafts[app.id], phone: event.target.value } }))} className="block mt-1 w-full border rounded px-2 py-2" /></label>
+                          {(schemeConfigs[app.scheme_code]?.config.form_fields || []).filter((field) => !['full_name', 'email', 'phone'].includes(field.name)).map((field) => {
+                            const draft = correctionDrafts[app.id];
+                            const value = String(draft.declared_fields[field.name] ?? '');
+                            const controlClass = 'block mt-1 w-full border rounded px-2 py-2';
+                            return <label key={field.name} className="text-xs font-semibold">{field.label}
+                              {field.type === 'select' ? <select value={value} onChange={(event) => setCorrectionDrafts((old) => ({ ...old, [app.id]: { ...draft, declared_fields: { ...draft.declared_fields, [field.name]: event.target.value } } }))} className={controlClass}>
+                                <option value="">Choose…</option>{(field.options || []).map((option) => <option key={option} value={option}>{option}</option>)}
+                              </select> : <input type={field.type === 'number' ? 'number' : 'text'} step={field.step || (field.type === 'number' ? 'any' : undefined)} value={value} onChange={(event) => setCorrectionDrafts((old) => ({ ...old, [app.id]: { ...draft, declared_fields: { ...draft.declared_fields, [field.name]: event.target.value } } }))} className={controlClass} />}
+                            </label>;
+                          })}
+                        </div>
+                        {correctionError[app.id] && <p role="alert" className="text-xs text-rose-700">{correctionError[app.id]}</p>}
+                        <button type="submit" disabled={savingCorrection === app.id} className="px-4 py-2 rounded-lg bg-amber-700 text-white text-xs font-bold disabled:opacity-50">
+                          {savingCorrection === app.id ? 'Submitting…' : 'Save corrections and resubmit'}
+                        </button>
+                      </form>
+                    )}
+
                     {/* AI Rule Engine Evaluation Report */}
                     {evalData && (
                       <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3">
@@ -395,7 +458,7 @@ export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, on
                           }))).map((requiredDoc) => {
                             const doc = app.documents.find((item) => item.doc_type === requiredDoc.id);
                             const key = `${app.id}:${requiredDoc.id}`;
-                            const canResubmit = app.status !== 'APPROVED' && app.status !== 'REJECTED'
+                            const canResubmit = !['APPROVED', 'REJECTED', 'SELECTED', 'NOT_SELECTED'].includes(app.status)
                               && (!doc || doc.ocr_status !== 'SUCCESS' || app.status === 'DEFICIENT');
                             return (
                               <div key={requiredDoc.id} className="p-3 rounded-lg border border-slate-200">
@@ -412,9 +475,7 @@ export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, on
                                         ? 'bg-emerald-50 text-emerald-700'
                                         : 'bg-amber-50 text-amber-800'
                                     }`}>{doc?.ocr_status === 'SUCCESS' ? 'FIELDS EXTRACTED' : doc?.ocr_status || 'NOT UPLOADED'}</span>
-                                    {doc?.file_path?.startsWith('/uploads/') && (
-                                      <a href={documentUrl(doc.file_path)} target="_blank" rel="noreferrer" className="text-xs font-semibold text-blue-800 underline">View</a>
-                                    )}
+                                    {doc?.file_path && <button type="button" onClick={() => void api.openDocument(doc.file_path!).catch((err: unknown) => setDocumentErrors((old) => ({ ...old, [key]: err instanceof Error ? err.message : 'Unable to open document.' })))} className="text-xs font-semibold text-blue-800 underline">View</button>}
                                   </div>
                                 </div>
                                 {doc?.extraction_method && (

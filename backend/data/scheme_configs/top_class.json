@@ -17,6 +17,10 @@
       "Post-Graduate"
     ]
   },
+  "selection_config": {
+    "ranking_mode": "OFFICIAL_MERIT_LIST_REVIEW",
+    "criteria_note": "The supplied data has no numeric merit ranking field or current notified institution roster. Verify the official merit list, roster and institution/course eligibility manually."
+  },
   "validation_rules": [
     {
       "field": "category",

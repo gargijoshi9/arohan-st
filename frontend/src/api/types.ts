@@ -98,12 +98,14 @@ export interface Application {
   applicant_email: string;
   declared_data: Record<string, any>;
   confidence_score: number;
-  status: 'SUBMITTED' | 'UNDER_REVIEW' | 'APPROVED' | 'REJECTED' | 'DEFICIENT';
+  status: 'SUBMITTED' | 'UNDER_REVIEW' | 'APPROVED' | 'REJECTED' | 'DEFICIENT' | 'SELECTED' | 'NOT_SELECTED' | string;
   ai_evaluation?: RuleEvaluation;
   admin_remarks?: string;
   created_at: string;
   updated_at: string;
   documents: DocumentItem[];
+  merit_score?: number | null;
+  selection_rank?: number | null;
 }
 
 export interface ApplicationSubmitPayload {
@@ -116,6 +118,108 @@ export interface ApplicationSubmitPayload {
 }
 
 export interface AdminDecisionPayload {
-  decision: 'APPROVE' | 'REJECT' | 'DEFICIENT' | 'UNDER_REVIEW';
+  decision: 'APPROVE' | 'REJECT' | 'DEFICIENT' | 'UNDER_REVIEW' | 'SELECT' | 'NOT_SELECT';
   remarks?: string;
+}
+
+export interface LoginPayload {
+  role: 'applicant' | 'admin';
+  email: string;
+  name?: string;
+  password?: string;
+  otp?: string;
+}
+
+export interface LoginResult {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  role: 'applicant' | 'admin';
+  email: string;
+  name: string;
+}
+
+export interface NotificationItem {
+  id: number;
+  application_id: number;
+  title: string;
+  message: string;
+  read_at?: string | null;
+  created_at: string;
+}
+
+export interface DashboardSummary {
+  total_applications: number;
+  by_status: Record<string, number>;
+  by_scheme: Record<string, { total: number; approved: number; deficient: number; under_review: number }>;
+  active_awards: number;
+  total_awards: number;
+  pending_payments: number;
+  generated_at: string;
+}
+
+export interface SelectionCandidate {
+  application_id: number;
+  application_no: string;
+  applicant_name: string;
+  scheme_code: string;
+  status: string;
+  mark_field: string | null;
+  marks: number | null;
+  eligible_for_ranking: boolean;
+  human_decision_required: boolean;
+  rank: number | null;
+  within_demo_slots: boolean;
+}
+
+export interface SelectionResult {
+  scheme_code: string;
+  scheme_name: string;
+  mark_field: string | null;
+  slots: number;
+  notice: string;
+  candidates: SelectionCandidate[];
+}
+
+export interface AwardPaymentItem {
+  id: number;
+  period: string;
+  amount: number;
+  status: string;
+  reference?: string | null;
+  paid_at?: string | null;
+}
+
+export interface AwardItem {
+  id: number;
+  application_id: number;
+  application_no: string;
+  applicant_name?: string;
+  applicant_email?: string;
+  scheme_code: string;
+  award_status: string;
+  approved_amount?: number | null;
+  currency: string;
+  start_date?: string | null;
+  end_date?: string | null;
+  next_review_date?: string | null;
+  officer_remarks?: string | null;
+  updated_at: string;
+  payments: AwardPaymentItem[];
+}
+
+export interface AwardUpdatePayload {
+  award_status: string;
+  approved_amount?: number;
+  start_date?: string;
+  end_date?: string;
+  next_review_date?: string;
+  officer_remarks?: string;
+}
+
+export interface PaymentCreatePayload {
+  period: string;
+  amount: number;
+  status: string;
+  reference?: string;
 }

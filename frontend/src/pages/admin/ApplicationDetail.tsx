@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { api, documentUrl } from '../../api/client';
+import { api } from '../../api/client';
 import { Application } from '../../api/types';
 import { StatusBadge } from '../../components/StatusBadge';
 import { ConfidenceMeter } from '../../components/ConfidenceMeter';
@@ -31,6 +31,7 @@ export const ApplicationDetail: React.FC<ApplicationDetailProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [remarks, setRemarks] = useState<string>('');
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [audit, setAudit] = useState<Array<{ id: number; actor_email: string; actor_role: string; action: string; from_status?: string; to_status?: string; remarks?: string; created_at: string }>>([]);
 
   useEffect(() => {
     loadApplication();
@@ -40,9 +41,13 @@ export const ApplicationDetail: React.FC<ApplicationDetailProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const data = await api.getApplication(applicationId);
+      const [data, history] = await Promise.all([
+        api.getApplication(applicationId),
+        api.getApplicationAudit(applicationId)
+      ]);
       setApp(data);
       setRemarks(data.admin_remarks || '');
+      setAudit(history);
     } catch (err: any) {
       setError(err.message || 'Failed to load application details');
     } finally {
@@ -50,7 +55,7 @@ export const ApplicationDetail: React.FC<ApplicationDetailProps> = ({
     }
   };
 
-  const handleDecision = async (decision: 'APPROVE' | 'REJECT' | 'DEFICIENT') => {
+  const handleDecision = async (decision: 'APPROVE' | 'REJECT' | 'DEFICIENT' | 'SELECT' | 'NOT_SELECT') => {
     if (!app) return;
     setUpdating(true);
     setError(null);
@@ -62,6 +67,7 @@ export const ApplicationDetail: React.FC<ApplicationDetailProps> = ({
         remarks: remarks.trim()
       });
       setApp(updated);
+      setAudit(await api.getApplicationAudit(app.id));
       setSuccessMsg(`Application status updated to ${updated.status} successfully.`);
     } catch (err: any) {
       setError(err.message || 'Failed to record decision');
@@ -312,8 +318,19 @@ export const ApplicationDetail: React.FC<ApplicationDetailProps> = ({
                             ? 'bg-amber-50 text-amber-800 border-amber-200'
                             : 'bg-rose-50 text-rose-700 border-rose-200'
                         }`}>{d.ocr_status === 'SUCCESS' ? 'FIELDS EXTRACTED' : `OCR ${d.ocr_status || 'PENDING'}`}</span>
-                        {d.file_path && d.file_path.startsWith('/uploads/') && (
-                          <a href={documentUrl(d.file_path)} target="_blank" rel="noreferrer" className="text-xs font-semibold text-blue-800 underline">View file</a>
+                        {d.file_path && <button type="button" onClick={() => void api.openDocument(d.file_path!).catch((err: unknown) => setError(err instanceof Error ? err.message : 'Unable to open document.'))} className="text-xs font-semibold text-blue-800 underline">View file</button>}
+                      </div>
+                      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                        <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3">Workflow audit trail</h4>
+                        {audit.length === 0 ? <p className="text-xs text-slate-500">No recorded workflow events.</p> : (
+                          <ol className="space-y-3">
+                            {audit.map((event) => <li key={event.id} className="border-l-2 border-blue-200 pl-3 text-xs">
+                              <div className="font-semibold text-slate-800">{event.action.replace(/_/g, ' ')}</div>
+                              <div className="text-slate-500">{event.actor_role} · {event.actor_email} · {new Date(event.created_at).toLocaleString()}</div>
+                              {(event.from_status || event.to_status) && <div className="text-slate-600">{event.from_status || 'NEW'} → {event.to_status || '—'}</div>}
+                              {event.remarks && <p className="mt-1 text-slate-700">{event.remarks}</p>}
+                            </li>)}
+                          </ol>
                         )}
                       </div>
                     </div>
@@ -370,23 +387,44 @@ export const ApplicationDetail: React.FC<ApplicationDetailProps> = ({
                   placeholder="Enter reason for approval, rejection, or specific rectification instructions for the scholar..."
                   className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-600"
                 />
+                <p className="mt-1 text-[10px] text-slate-500">A written reason is required for selection, approval, deficiency and rejection; it is included in the applicant notice and audit log.</p>
               </div>
 
               {/* Action Buttons */}
               <div className="pt-2 space-y-2">
                 <button
                   type="button"
-                  disabled={updating}
+                  disabled={updating || !remarks.trim()}
                   onClick={() => handleDecision('APPROVE')}
                   className="w-full py-2.5 px-3 rounded-lg bg-emerald-700 hover:bg-emerald-600 disabled:bg-slate-300 text-white font-bold transition flex items-center justify-center gap-2 shadow-sm"
                 >
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>Approve Fellowship Award</span>
+                  <span>Approve and Create Award Record</span>
                 </button>
 
                 <button
                   type="button"
-                  disabled={updating}
+                  disabled={updating || !remarks.trim()}
+                  onClick={() => handleDecision('SELECT')}
+                  className="w-full py-2.5 px-3 rounded-lg bg-indigo-700 hover:bg-indigo-600 disabled:bg-slate-300 text-white font-bold transition flex items-center justify-center gap-2 shadow-sm"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Record Merit Selection</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={updating || !remarks.trim()}
+                  onClick={() => handleDecision('NOT_SELECT')}
+                  className="w-full py-2.5 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:bg-slate-300 text-white font-bold transition flex items-center justify-center gap-2 shadow-sm"
+                >
+                  <XCircle className="w-4 h-4" />
+                  <span>Record Not Selected</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={updating || !remarks.trim()}
                   onClick={() => handleDecision('DEFICIENT')}
                   className="w-full py-2.5 px-3 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:bg-slate-300 text-white font-bold transition flex items-center justify-center gap-2 shadow-sm"
                 >
@@ -396,7 +434,7 @@ export const ApplicationDetail: React.FC<ApplicationDetailProps> = ({
 
                 <button
                   type="button"
-                  disabled={updating}
+                  disabled={updating || !remarks.trim()}
                   onClick={() => handleDecision('REJECT')}
                   className="w-full py-2.5 px-3 rounded-lg bg-rose-700 hover:bg-rose-600 disabled:bg-slate-300 text-white font-bold transition flex items-center justify-center gap-2 shadow-sm"
                 >
@@ -406,9 +444,9 @@ export const ApplicationDetail: React.FC<ApplicationDetailProps> = ({
               </div>
 
               <div className="pt-3 border-t border-slate-100 text-[11px] text-slate-500 space-y-1">
-                <p>• <strong>Approve</strong>: Finalizes grant of fellowship stipend.</p>
-                <p>• <strong>Request Resubmission</strong>: Notifies candidate to remedy discrepancy.</p>
-                <p>• <strong>Reject</strong>: Disqualifies application per statutory guidelines.</p>
+                <p>• Selection ranking is advisory; authorized officer decision and rationale are recorded.</p>
+                <p>• Approval creates an award record; payment processing is outside this prototype.</p>
+                <p>• Notifications appear in the applicant portal; external email/SMS delivery is not configured.</p>
               </div>
             </div>
           </div>

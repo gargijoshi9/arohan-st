@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { api } from '../api/client';
 
 export type UserRole = 'applicant' | 'admin' | null;
 
@@ -14,70 +15,59 @@ interface AuthContextType {
   user: UserProfile | null;
   isAdmin: boolean;
   isApplicant: boolean;
-  loginPortal: (name: string, email: string, password?: string) => boolean;
+  loginPortal: (name: string, email: string, secret?: string) => Promise<void>;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const DEMO_ADMIN_USERNAME = 'MotaOfficer@gmail.com';
-const DEMO_ADMIN_PASSWORD = 'MotaOfficer';
+const USER_KEY = 'arohan_auth_user_v3';
+const ADMIN_EMAIL = 'motaofficer@gmail.com';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(() => {
-    // Require the user to choose an applicant or officer login each session.
-    const saved = localStorage.getItem('arohan_auth_user_v2');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        // fallback
-      }
+    if (!localStorage.getItem('arohan_access_token_v1')) return null;
+    try {
+      const saved = localStorage.getItem(USER_KEY);
+      return saved ? JSON.parse(saved) as UserProfile : null;
+    } catch {
+      return null;
     }
-    return null;
   });
 
   useEffect(() => {
-    if (user) {
-      localStorage.setItem('arohan_auth_user_v2', JSON.stringify(user));
-    } else {
-      localStorage.removeItem('arohan_auth_user_v2');
-    }
+    if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
+    else localStorage.removeItem(USER_KEY);
   }, [user]);
 
-  const loginPortal = (name: string, email: string, password = ''): boolean => {
-    if (email.trim().toLowerCase() === DEMO_ADMIN_USERNAME.toLowerCase()) {
-      if (password !== DEMO_ADMIN_PASSWORD) return false;
-      setUser({
-        role: 'admin',
-        name: name.trim() || 'MoTA Officer',
-        email: DEMO_ADMIN_USERNAME,
-        officerDesignation: 'Verification Officer (MoTA Desk)'
-      });
-      return true;
-    }
-    setUser({
-      role: 'applicant',
-      name: name || 'ST Scholar',
-      email: email || 'scholar@example.edu',
-      category: 'ST'
+  const loginPortal = async (name: string, email: string, secret = '') => {
+    const isAdmin = email.trim().toLowerCase() === ADMIN_EMAIL;
+    const result = await api.login({
+      role: isAdmin ? 'admin' : 'applicant',
+      email: email.trim(),
+      name: name.trim(),
+      ...(isAdmin ? { password: secret } : { otp: secret })
     });
-    return true;
+    api.saveToken(result.access_token);
+    setUser({
+      role: result.role,
+      name: result.name,
+      email: result.email,
+      category: result.role === 'applicant' ? 'ST' : undefined,
+      officerDesignation: result.role === 'admin' ? 'Verification Officer (MoTA Desk)' : undefined
+    });
   };
 
   const logout = () => {
+    api.clearToken();
     setUser(null);
   };
-
-  const isAdmin = user?.role === 'admin';
-  const isApplicant = user?.role === 'applicant';
 
   return (
     <AuthContext.Provider
       value={{
         user,
-        isAdmin,
-        isApplicant,
+        isAdmin: user?.role === 'admin',
+        isApplicant: user?.role === 'applicant',
         loginPortal,
         logout
       }}
@@ -89,8 +79,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };

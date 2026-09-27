@@ -17,6 +17,10 @@
       "X"
     ]
   },
+  "selection_config": {
+    "ranking_mode": "STATE_UT_AUTHORITY_REVIEW",
+    "criteria_note": "The supplied data defines eligibility but no numeric rank or selection slots. Follow current State/UT implementation and budget/roster rules."
+  },
   "validation_rules": [
     {
       "field": "category",

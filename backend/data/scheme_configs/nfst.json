@@ -20,6 +20,11 @@
     ],
     "income_criteria": "None"
   },
+  "selection_config": {
+    "ranking_mode": "DECLARED_MARKS_ADVISORY",
+    "ranking_field": "pg_percentage",
+    "criteria_note": "Final PG percentage is an indicative ordering aid only; verify applicable published guidelines and committee process."
+  },
   "validation_rules": [
     {
       "field": "category",

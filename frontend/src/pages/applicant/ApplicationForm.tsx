@@ -55,7 +55,7 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({
       const initial: Record<string, any> = Object.fromEntries(
         data.config.form_fields.map((field) => [field.name, ''])
       );
-      initial.full_name = user?.name || '';
+      initial.full_name = user?.full_name || '';
       initial.email = user?.email || '';
 
       setFormData(initial);
@@ -103,13 +103,13 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({
     let targetApplicationId = applicationId;
     try {
       if (targetApplicationId === null) {
+        // Identity comes from the signed-in account, so the submission cannot
+        // be made on behalf of anyone else.
         const result = await api.submitApplication({
           scheme_code: scheme.code,
-          full_name: formData.full_name || user?.name || 'Applicant',
-          email: formData.email || user?.email || 'applicant@example.com',
-          phone: formData.phone || '',
-          declared_fields: formData,
-          documents: []
+          full_name: formData.full_name || user?.full_name || '',
+          phone: formData.phone || user?.phone || '',
+          declared_fields: formData
         });
         targetApplicationId = result.id;
         setApplicationId(result.id);

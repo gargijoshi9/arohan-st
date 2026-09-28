@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
-import { Application } from '../../api/types';
+import { Application, Scheme } from '../../api/types';
 import { StatusBadge } from '../../components/StatusBadge';
 import { ConfidenceMeter } from '../../components/ConfidenceMeter';
 import { 
@@ -32,26 +32,62 @@ export const ApplicationDetail: React.FC<ApplicationDetailProps> = ({
   const [remarks, setRemarks] = useState<string>('');
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [audit, setAudit] = useState<Array<{ id: number; actor_email: string; actor_role: string; action: string; from_status?: string; to_status?: string; remarks?: string; created_at: string }>>([]);
+  const [docAction, setDocAction] = useState<{ docId: number; decision: 'VERIFY' | 'DEFICIENT' } | null>(null);
+  const [docRemarks, setDocRemarks] = useState('');
+  const [docBusy, setDocBusy] = useState(false);
+  const [docError, setDocError] = useState<string | null>(null);
+  const [schemeConfig, setSchemeConfig] = useState<Scheme | null>(null);
 
   useEffect(() => {
     loadApplication();
   }, [applicationId]);
 
+  const refresh = async () => {
+    const [data, history] = await Promise.all([
+      api.getApplication(applicationId),
+      api.getApplicationAudit(applicationId)
+    ]);
+    setApp(data);
+    setAudit(history);
+    return data;
+  };
+
   const loadApplication = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [data, history] = await Promise.all([
-        api.getApplication(applicationId),
-        api.getApplicationAudit(applicationId)
-      ]);
-      setApp(data);
+      const data = await refresh();
       setRemarks(data.admin_remarks || '');
-      setAudit(history);
+      api.getSchemeByCode(data.scheme_code).then(setSchemeConfig).catch(() => setSchemeConfig(null));
     } catch (err: any) {
       setError(err.message || 'Failed to load application details');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const startDocAction = (docId: number, decision: 'VERIFY' | 'DEFICIENT') => {
+    setDocAction({ docId, decision });
+    setDocRemarks('');
+    setDocError(null);
+  };
+
+  const submitDocAction = async () => {
+    if (!docAction) return;
+    setDocBusy(true);
+    setDocError(null);
+    const decisionRemarks = remarks;
+    try {
+      await api.verifyDocument(docAction.docId, { decision: docAction.decision, remarks: docRemarks.trim() });
+      await refresh();
+      setRemarks(decisionRemarks);
+      setDocAction(null);
+      setDocRemarks('');
+      setSuccessMsg(`Document ${docAction.decision === 'VERIFY' ? 'verified' : 'marked deficient'}.`);
+    } catch (err: any) {
+      setDocError(err.message || 'Failed to record the document review.');
+    } finally {
+      setDocBusy(false);
     }
   };
 
@@ -102,6 +138,17 @@ export const ApplicationDetail: React.FC<ApplicationDetailProps> = ({
   const evalData = app.ai_evaluation;
   const mismatches = evalData?.mismatches || [];
   const hasErrors = mismatches.some((m) => m.severity === 'ERROR');
+
+  const requiredDocIds = (schemeConfig?.config.required_documents || [])
+    .filter((doc) => doc.required)
+    .map((doc) => doc.id);
+  const verifiedDocIds = (app.documents || [])
+    .filter((doc) => doc.status === 'VERIFIED')
+    .map((doc) => doc.doc_type);
+  const unverifiedRequired = requiredDocIds.filter((id) => !verifiedDocIds.includes(id));
+  const isFinalStatus = ['APPROVED', 'REJECTED'].includes(app.status);
+  const selectionReady = evalData?.pass_fail === true && unverifiedRequired.length === 0;
+  const canReviewDocuments = !isFinalStatus && app.documents.length > 0;
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -310,7 +357,16 @@ export const ApplicationDetail: React.FC<ApplicationDetailProps> = ({
                           <div className="text-[11px] text-slate-500">Type: {d.doc_type}</div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3 flex-shrink-0">
+                      <div className="flex items-center gap-3 flex-shrink-0 flex-wrap justify-end">
+                        {d.status && (
+                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded border ${
+                            d.status === 'VERIFIED'
+                              ? 'bg-blue-50 text-blue-800 border-blue-200'
+                              : d.status === 'DEFICIENT'
+                              ? 'bg-amber-50 text-amber-800 border-amber-200'
+                              : 'bg-slate-50 text-slate-600 border-slate-200'
+                          }`}>{d.status === 'VERIFIED' ? 'OFFICER VERIFIED' : d.status}</span>
+                        )}
                         <span className={`text-[11px] font-medium px-2 py-0.5 rounded border ${
                           d.ocr_status === 'SUCCESS'
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -319,21 +375,64 @@ export const ApplicationDetail: React.FC<ApplicationDetailProps> = ({
                             : 'bg-rose-50 text-rose-700 border-rose-200'
                         }`}>{d.ocr_status === 'SUCCESS' ? 'FIELDS EXTRACTED' : `OCR ${d.ocr_status || 'PENDING'}`}</span>
                         {d.file_path && <button type="button" onClick={() => void api.openDocument(d.file_path!).catch((err: unknown) => setError(err instanceof Error ? err.message : 'Unable to open document.'))} className="text-xs font-semibold text-blue-800 underline">View file</button>}
-                      </div>
-                      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-                        <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3">Workflow audit trail</h4>
-                        {audit.length === 0 ? <p className="text-xs text-slate-500">No recorded workflow events.</p> : (
-                          <ol className="space-y-3">
-                            {audit.map((event) => <li key={event.id} className="border-l-2 border-blue-200 pl-3 text-xs">
-                              <div className="font-semibold text-slate-800">{event.action.replace(/_/g, ' ')}</div>
-                              <div className="text-slate-500">{event.actor_role} · {event.actor_email} · {new Date(event.created_at).toLocaleString()}</div>
-                              {(event.from_status || event.to_status) && <div className="text-slate-600">{event.from_status || 'NEW'} → {event.to_status || '—'}</div>}
-                              {event.remarks && <p className="mt-1 text-slate-700">{event.remarks}</p>}
-                            </li>)}
-                          </ol>
+                        {canReviewDocuments && d.id != null && (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              disabled={docAction?.docId === d.id && docBusy}
+                              onClick={() => startDocAction(d.id!, 'VERIFY')}
+                              className="text-[11px] font-semibold px-2 py-1 rounded border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50"
+                            >
+                              Verify
+                            </button>
+                            <button
+                              type="button"
+                              disabled={docAction?.docId === d.id && docBusy}
+                              onClick={() => startDocAction(d.id!, 'DEFICIENT')}
+                              className="text-[11px] font-semibold px-2 py-1 rounded border border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 disabled:opacity-50"
+                            >
+                              Deficient
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
+                    {canReviewDocuments && d.id != null && docAction?.docId === d.id && (
+                      <div className="mt-2 ml-6 rounded-lg border border-slate-300 bg-slate-50 p-3 space-y-2">
+                        <p className="text-[11px] text-slate-600">
+                          {docAction.decision === 'VERIFY'
+                            ? 'Record your verification of this document against the issuing authority.'
+                            : 'Explain what is wrong so the applicant can upload an acceptable replacement.'}
+                          A written reason is required and is sent to the applicant and the audit log.
+                        </p>
+                        <textarea
+                          rows={2}
+                          value={docRemarks}
+                          onChange={(e) => setDocRemarks(e.target.value)}
+                          placeholder={docAction.decision === 'VERIFY' ? 'e.g. Certificate number matches the State portal record.' : 'e.g. Scan is illegible; please upload a readable certified copy.'}
+                          className="w-full p-2 border border-slate-300 rounded-lg text-[11px] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        {docError && <p role="alert" className="text-[11px] text-rose-700">{docError}</p>}
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={docBusy || !docRemarks.trim()}
+                            onClick={() => void submitDocAction()}
+                            className="text-[11px] font-semibold px-3 py-1.5 rounded bg-blue-900 text-white hover:bg-blue-800 disabled:opacity-40"
+                          >
+                            {docBusy ? 'Recording…' : 'Confirm decision'}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={docBusy}
+                            onClick={() => { setDocAction(null); setDocRemarks(''); setDocError(null); }}
+                            className="text-[11px] font-semibold px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     {d.extraction_method && (
                       <div className="mt-1 ml-6 text-[10px] text-slate-500">
                         {d.extraction_method}
@@ -361,6 +460,20 @@ export const ApplicationDetail: React.FC<ApplicationDetailProps> = ({
               </div>
             )}
           </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3">Workflow audit trail</h4>
+            {audit.length === 0 ? <p className="text-xs text-slate-500">No recorded workflow events.</p> : (
+              <ol className="space-y-3">
+                {audit.map((event) => <li key={event.id} className="border-l-2 border-blue-200 pl-3 text-xs">
+                  <div className="font-semibold text-slate-800">{event.action.replace(/_/g, ' ')}</div>
+                  <div className="text-slate-500">{event.actor_role} · {event.actor_email} · {new Date(event.created_at).toLocaleString()}</div>
+                  {(event.from_status || event.to_status) && <div className="text-slate-600">{event.from_status || 'NEW'} → {event.to_status || '—'}</div>}
+                  {event.remarks && <p className="mt-1 text-slate-700">{event.remarks}</p>}
+                </li>)}
+              </ol>
+            )}
+          </div>
         </div>
 
         {/* Right Col: Officer Adjudication Decision Panel */}
@@ -375,6 +488,29 @@ export const ApplicationDetail: React.FC<ApplicationDetailProps> = ({
                 <label className="block text-slate-500 font-semibold mb-1">Current Application Status</label>
                 <StatusBadge status={app.status} size="lg" />
               </div>
+
+              {!isFinalStatus && schemeConfig && (
+                <div className={`rounded-lg border p-3 ${
+                  selectionReady ? 'bg-emerald-50 border-emerald-300' : 'bg-amber-50 border-amber-300'
+                }`}>
+                  <div className={`text-[11px] font-bold ${selectionReady ? 'text-emerald-900' : 'text-amber-900'}`}>
+                    Selection readiness: {verifiedDocIds.filter((id) => requiredDocIds.includes(id)).length} of {requiredDocIds.length} required documents officer-verified
+                  </div>
+                  {!selectionReady && (
+                    <ul className="mt-1.5 space-y-0.5 text-[10px] text-amber-900 list-disc pl-4">
+                      {unverifiedRequired.length > 0 && (
+                        <li>Verify every required document above: {unverifiedRequired.join(', ')}.</li>
+                      )}
+                      {evalData?.pass_fail !== true && (
+                        <li>Configured eligibility checks still report issues; resolve them or request resubmission.</li>
+                      )}
+                    </ul>
+                  )}
+                  <p className="mt-1.5 text-[10px] text-slate-600">
+                    Recording a merit selection is blocked until both conditions are met.
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label className="block text-slate-700 font-semibold mb-1.5">

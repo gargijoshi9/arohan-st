@@ -4,8 +4,12 @@ import {
   DocumentItem,
   ApplicationSubmitPayload,
   AdminDecisionPayload,
+  DocumentVerificationResult,
   LoginPayload,
-  LoginResult,
+  RegisterPayload,
+  Session,
+  Profile,
+  PaginatedApplications,
   NotificationItem,
   DashboardSummary,
   SelectionResult,
@@ -45,10 +49,17 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   login: (payload: LoginPayload) =>
-    request<LoginResult>('/auth/login', { method: 'POST', body: JSON.stringify(payload) }),
+    request<Session>('/auth/login', { method: 'POST', body: JSON.stringify(payload) }),
+
+  register: (payload: RegisterPayload) =>
+    request<Session>('/auth/register', { method: 'POST', body: JSON.stringify(payload) }),
+
+  /** The signed-in account, used to confirm a stored token is still valid. */
+  getProfile: () => request<Profile>('/auth/me'),
 
   saveToken: (token: string) => localStorage.setItem(TOKEN_KEY, token),
   clearToken: () => localStorage.removeItem(TOKEN_KEY),
+  hasToken: () => Boolean(localStorage.getItem(TOKEN_KEY)),
 
   uploadApplicationDocument: async (applicationId: number, docType: string, file: File) => {
     const body = new FormData();
@@ -78,23 +89,36 @@ export const api = {
   getNotifications: () => request<NotificationItem[]>('/applications/notifications'),
   markNotificationRead: (id: number) =>
     request<{ id: number; read_at: string }>(`/applications/notifications/${id}/read`, { method: 'POST' }),
+  withdrawApplication: (id: number) =>
+    request<Application>(`/applications/${id}/withdraw`, { method: 'POST' }),
 
   getAdminQueue: (params?: {
     sort_by?: 'confidence_score' | 'created_at';
     order?: 'asc' | 'desc';
     status?: string;
     scheme_code?: string;
+    search?: string;
+    page?: number;
+    page_size?: number;
   }) => {
     const query = new URLSearchParams();
     if (params?.sort_by) query.set('sort_by', params.sort_by);
     if (params?.order) query.set('order', params.order);
     if (params?.status && params.status !== 'ALL') query.set('status', params.status);
     if (params?.scheme_code && params.scheme_code !== 'ALL') query.set('scheme_code', params.scheme_code);
+    if (params?.search) query.set('search', params.search);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.page_size) query.set('page_size', String(params.page_size));
     const qs = query.toString();
-    return request<Application[]>(`/admin/queue${qs ? `?${qs}` : ''}`);
+    return request<PaginatedApplications>(`/admin/queue${qs ? `?${qs}` : ''}`);
   },
   submitAdminDecision: (id: number, payload: AdminDecisionPayload) =>
     request<Application>(`/admin/applications/${id}/decision`, { method: 'POST', body: JSON.stringify(payload) }),
+  verifyDocument: (documentId: number, payload: { decision: 'VERIFY' | 'DEFICIENT'; remarks: string }) =>
+    request<DocumentVerificationResult>(`/admin/documents/${documentId}/verification`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
   getApplicationAudit: (id: number) =>
     request<Array<{ id: number; actor_email: string; actor_role: string; action: string; from_status?: string; to_status?: string; remarks?: string; created_at: string }>>(`/admin/applications/${id}/audit`),
   getDashboard: () => request<DashboardSummary>('/admin/dashboard'),

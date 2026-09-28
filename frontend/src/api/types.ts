@@ -70,6 +70,14 @@ export interface DocumentItem {
   uploaded_at?: string;
 }
 
+export interface DocumentVerificationResult {
+  document_id: number;
+  application_id: number;
+  document_status: string;
+  application_status: string;
+  review_remarks: string;
+}
+
 export interface RuleMismatch {
   field: string;
   label: string;
@@ -98,7 +106,7 @@ export interface Application {
   applicant_email: string;
   declared_data: Record<string, any>;
   confidence_score: number;
-  status: 'SUBMITTED' | 'UNDER_REVIEW' | 'APPROVED' | 'REJECTED' | 'DEFICIENT' | 'SELECTED' | 'NOT_SELECTED' | string;
+  status: 'SUBMITTED' | 'UNDER_REVIEW' | 'APPROVED' | 'REJECTED' | 'DEFICIENT' | 'SELECTED' | 'NOT_SELECTED' | 'WITHDRAWN' | string;
   ai_evaluation?: RuleEvaluation;
   admin_remarks?: string;
   created_at: string;
@@ -111,10 +119,8 @@ export interface Application {
 export interface ApplicationSubmitPayload {
   scheme_code: string;
   full_name: string;
-  email: string;
   phone?: string;
   declared_fields: Record<string, any>;
-  documents: DocumentItem[];
 }
 
 export interface AdminDecisionPayload {
@@ -122,21 +128,47 @@ export interface AdminDecisionPayload {
   remarks?: string;
 }
 
-export interface LoginPayload {
-  role: 'applicant' | 'admin';
-  email: string;
-  name?: string;
-  password?: string;
-  otp?: string;
-}
+export type UserRole = 'applicant' | 'admin';
 
-export interface LoginResult {
+/** Both sign-in and registration return the same session shape. */
+export interface Session {
   access_token: string;
   token_type: string;
   expires_in: number;
-  role: 'applicant' | 'admin';
+  role: UserRole;
   email: string;
   name: string;
+}
+
+export interface LoginPayload {
+  email: string;
+  password: string;
+}
+
+export interface RegisterPayload {
+  full_name: string;
+  email: string;
+  phone?: string;
+  password: string;
+}
+
+/** The authoritative account record from `GET /auth/me`. */
+export interface Profile {
+  id: number;
+  email: string;
+  full_name: string;
+  phone: string;
+  role: UserRole;
+  applicant_id: number | null;
+  created_at: string;
+}
+
+export interface PaginatedApplications {
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  items: Application[];
 }
 
 export interface NotificationItem {
@@ -169,7 +201,8 @@ export interface SelectionCandidate {
   eligible_for_ranking: boolean;
   human_decision_required: boolean;
   rank: number | null;
-  within_demo_slots: boolean;
+  within_available_slots: boolean;
+  ranking_mode: string;
 }
 
 export interface SelectionResult {

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { Header } from './components/Header';
 import { Navbar } from './components/Navbar';
+import { Landing } from './pages/landing/Landing';
 import { SchemeSelection } from './pages/applicant/SchemeSelection';
 import { ApplicationForm } from './pages/applicant/ApplicationForm';
 import { StatusTracker } from './pages/applicant/StatusTracker';
@@ -10,19 +11,35 @@ import { ReviewQueue } from './pages/admin/ReviewQueue';
 import { ApplicationDetail } from './pages/admin/ApplicationDetail';
 import { SelectionDesk } from './pages/admin/SelectionDesk';
 import { AwardManagement } from './pages/admin/AwardManagement';
-import { Landmark, Shield, Award, Users } from 'lucide-react';
+import { Landmark, Shield, Award, Users, ArrowLeft } from 'lucide-react';
 
 export const App: React.FC = () => {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, isRestoring, logout } = useAuth();
 
   // Tab navigation state
   const [currentTab, setCurrentTab] = useState<string>('schemes');
   const [selectedSchemeCode, setSelectedSchemeCode] = useState<string>('NFST');
   const [selectedAppId, setSelectedAppId] = useState<number | null>(null);
 
+  // Public landing page shown before sign-in
+  const [showLanding, setShowLanding] = useState(true);
+  const [landingAuthMode, setLandingAuthMode] = useState<'login' | 'register'>('login');
+
   // If user switches role, adjust tab appropriately
   const handleSelectTab = (tab: string) => {
     setCurrentTab(tab);
+  };
+
+  // An officer lands on the review queue, an applicant on the scheme list.
+  const handleSignedIn = () => {
+    setCurrentTab(isAdmin ? 'admin-queue' : 'schemes');
+  };
+
+  const handleSignOut = () => {
+    logout();
+    setSelectedAppId(null);
+    setCurrentTab('schemes');
+    setShowLanding(true);
   };
 
   const handleSelectSchemeToApply = (schemeCode: string) => {
@@ -51,14 +68,39 @@ export const App: React.FC = () => {
       <Header />
 
       {/* Navigation */}
-      {user && <Navbar currentTab={currentTab} onSelectTab={handleSelectTab} />}
+      {user && <Navbar currentTab={currentTab} onSelectTab={handleSelectTab} onSignOut={handleSignOut} />}
 
       {/* Main View Area */}
       <main className="flex-1">
-        {!user ? (
-          <div className="max-w-md mx-auto px-4 py-10">
-            <ApplicantLogin onLoginSuccess={() => setCurrentTab('schemes')} />
+        {isRestoring ? (
+          <div className="flex flex-col items-center justify-center py-24 text-slate-500">
+            <div className="inline-block animate-spin rounded-full h-9 w-9 border-4 border-blue-900 border-r-transparent mb-3" />
+            <p className="text-xs">Restoring your session…</p>
           </div>
+        ) : !user ? (
+          showLanding ? (
+            <Landing
+              onGetStarted={() => {
+                setLandingAuthMode('register');
+                setShowLanding(false);
+              }}
+              onSignIn={() => {
+                setLandingAuthMode('login');
+                setShowLanding(false);
+              }}
+            />
+          ) : (
+            <div className="max-w-md mx-auto px-4 py-10">
+              <button
+                onClick={() => setShowLanding(true)}
+                className="text-xs text-slate-500 hover:text-blue-900 mb-4 flex items-center gap-1.5 font-medium"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                Back to home
+              </button>
+              <ApplicantLogin initialMode={landingAuthMode} onLoginSuccess={handleSignedIn} />
+            </div>
+          )
         ) : isAdmin ? (
           currentTab === 'admin-detail' && selectedAppId ? (
             <ApplicationDetail applicationId={selectedAppId} onBackToQueue={handleBackToQueue} />

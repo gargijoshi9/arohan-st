@@ -1,0 +1,24 @@
+﻿============================================================================
+IDENTITY PROOF (MASKED) - SAMPLE RECORD
+============================================================================
+
+Applicant Name: RAMESH CHANDRA MUNDA
+Father's Name:  Birsa Munda
+Date of Birth:  14-11-1996
+Gender:         Male
+Category:       ST
+
+Address:
+Village Khunti, Post Office Khunti,
+District Ranchi, State Jharkhand,
+PIN 835731, India
+
+Identity Document: Aadhaar (masked to protect privacy)
+Document Number:   XXXX XXXX 4482
+Issued by:        Unique Identification Authority of India
+
+Contact: +91 9876543210
+
+Note: This is a sample document with masked identifiers. It is
+not an official record and confers no entitlement.
+============================================================================

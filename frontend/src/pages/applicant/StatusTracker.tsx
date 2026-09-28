@@ -21,6 +21,10 @@ interface StatusTrackerProps {
   onApplyNew: () => void;
 }
 
+// Mirrors LOCKED_STATUSES on the server: a final decision, a recorded selection
+// or an earlier withdrawal closes an application to further changes.
+const WITHDRAWABLE_STATUSES = new Set(['SUBMITTED', 'UNDER_REVIEW', 'DEFICIENT']);
+
 export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, onApplyNew }) => {
   const { user } = useAuth();
   const [applications, setApplications] = useState<Application[]>([]);
@@ -35,6 +39,9 @@ export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, on
   const [correctionDrafts, setCorrectionDrafts] = useState<Record<number, { full_name: string; phone: string; declared_fields: Record<string, unknown> }>>({});
   const [correctionError, setCorrectionError] = useState<Record<number, string>>({});
   const [savingCorrection, setSavingCorrection] = useState<number | null>(null);
+  const [withdrawingId, setWithdrawingId] = useState<number | null>(null);
+  const [confirmWithdrawId, setConfirmWithdrawId] = useState<number | null>(null);
+  const [withdrawError, setWithdrawError] = useState<Record<number, string>>({});
 
   useEffect(() => {
     if (user?.email) {
@@ -77,10 +84,27 @@ export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, on
       if (data.length > 0 && !expandedId) {
         setExpandedId(data[0].id);
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to fetch application status');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch application status');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleWithdraw = async (applicationId: number) => {
+    setWithdrawingId(applicationId);
+    setWithdrawError((prev) => ({ ...prev, [applicationId]: '' }));
+    try {
+      const updated = await api.withdrawApplication(applicationId);
+      setApplications((prev) => prev.map((app) => (app.id === applicationId ? updated : app)));
+      setConfirmWithdrawId(null);
+    } catch (err: unknown) {
+      setWithdrawError((prev) => ({
+        ...prev,
+        [applicationId]: err instanceof Error ? err.message : 'The application could not be withdrawn.'
+      }));
+    } finally {
+      setWithdrawingId(null);
     }
   };
 
@@ -247,6 +271,46 @@ export const StatusTracker: React.FC<StatusTrackerProps> = ({ highlightAppId, on
                     </div>
                   </div>
                 </div>
+
+                {/* Withdrawal is only offered while the application is still open. */}
+                {WITHDRAWABLE_STATUSES.has(app.status) && (
+                  <div className="px-5 py-3 bg-white border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
+                    {withdrawError[app.id] ? (
+                      <p role="alert" className="text-xs text-rose-700">
+                        {withdrawError[app.id]}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-500">
+                        Changed your mind? You can withdraw this application while it is still open for review.
+                      </p>
+                    )}
+                    {confirmWithdrawId === app.id ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-600">Withdraw permanently?</span>
+                        <button
+                          onClick={() => void handleWithdraw(app.id)}
+                          disabled={withdrawingId === app.id}
+                          className="px-3 py-1.5 rounded-lg bg-rose-700 hover:bg-rose-800 disabled:opacity-60 text-white text-xs font-semibold transition"
+                        >
+                          {withdrawingId === app.id ? 'Withdrawing…' : 'Yes, withdraw'}
+                        </button>
+                        <button
+                          onClick={() => setConfirmWithdrawId(null)}
+                          className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 transition"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmWithdrawId(app.id)}
+                        className="px-3 py-1.5 rounded-lg border border-rose-300 bg-white text-rose-700 text-xs font-semibold hover:bg-rose-50 transition"
+                      >
+                        Withdraw application
+                      </button>
+                    )}
+                  </div>
+                )}
 
                 {/* Expanded Timeline & Details */}
                 {isExpanded && (

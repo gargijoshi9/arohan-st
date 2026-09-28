@@ -1,0 +1,24 @@
+============================================================================
+STATE BANK OF INDIA, BRANCH RAYAGADA
+SCHOLARSHIP DISBURSEMENT ACCOUNT DETAILS / AADHAAR SEEDING PROOF
+============================================================================
+
+Account Holder Name:  DEEPAK NAYAK
+Guardian / Parent:    Rabindranath Nayak
+Account Number:       3201 8890 4417
+IFSC Code:             SBIN0RAY002
+Bank Name:             State Bank of India
+Branch:                Rayagada Main Branch, Odisha
+Account Type:          Savings
+Aadhaar Number:        5521 3344 7788
+Mobile Number Linked:  9XXXXXXXXX
+Aadhaar Seeded Status: Seeded
+Bank Account Evidence Present: Yes
+DBT: Enabled
+
+Aadhaar has been seeded with this bank account for direct benefit transfer of
+scholarship instalments under the Ministry of Tribal Affairs schemes.
+
+Note: This is a sample document for interface testing. It is not an official
+record and confers no entitlement.
+============================================================================

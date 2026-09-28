@@ -1,0 +1,23 @@
+============================================================================
+STATE BANK OF INDIA, BRANCH SIMDEGA
+SCHOLARSHIP DISBURSEMENT ACCOUNT DETAILS / AADHAAR SEEDING PROOF
+============================================================================
+
+Account Holder Name:  KIRAN KUMAR BAIGA
+Guardian / Parent:    Rameshwar Baiga
+Account Number:       3810 4472 9501
+IFSC Code:             SBIN0SIM001
+Bank Name:             State Bank of India
+Branch:                Simdega Main Branch, Jharkhand
+Account Type:          Minor / Savings (recurring deposit by guardian)
+Aadhaar Number:        4412 7788 1190
+Mobile Number Linked:  9XXXXXXXXX
+Aadhaar Seeded Status: Seeded
+Bank Account Evidence Present: Yes
+
+Aadhaar has been seeded with this bank account for direct benefit transfer of
+scholarship instalments under the Ministry of Tribal Affairs schemes.
+
+Note: This is a sample document for interface testing. It is not an official
+record and confers no entitlement.
+============================================================================

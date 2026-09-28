@@ -1,0 +1,24 @@
+============================================================================
+CENTRAL BOARD OF SECONDARY EDUCATION
+STATEMENT OF MARKS AND CERTIFICATE, SENIOR SECONDARY EXAMINATION
+============================================================================
+
+Candidate Name:   PRIYA KUMARI DEB
+Roll Number:      2406915
+Class / Standard: XII
+Examination Year: 2025
+Subject:          Science (Physics, Chemistry, Mathematics)
+
+Subject                     | Marks Obtained | Maximum | Total
+--------------------------- | -------------: | ------: | ------
+Physics                     |           421  |     500 |  84.2%
+Chemistry                   |           398  |     500 |  79.6%
+Mathematics                 |           446  |     500 |  89.2%
+
+Aggregate Percentage: 84.3%
+Marks Percentage: 84.3%
+Result: PASS
+
+Note: This is a sample document for interface testing. It is not an official
+record and confers no entitlement.
+============================================================================

@@ -51,7 +51,7 @@ export const SelectionDesk: React.FC<SelectionDeskProps> = ({ onSelectApplicatio
             {schemes.map((scheme) => <option key={scheme.code} value={scheme.code}>{scheme.code} — {scheme.name}</option>)}
           </select>
         </label>
-        <label className="text-xs font-semibold text-slate-700">Demo slots
+        <label className="text-xs font-semibold text-slate-700">Available seats
           <input type="number" min="1" max="500" value={slots} onChange={(event) => setSlots(Math.max(1, Number(event.target.value) || 1))} className="block mt-1 border rounded-lg px-3 py-2 w-28" />
         </label>
         <button onClick={() => void loadRankings()} className="flex items-center gap-2 bg-blue-900 text-white rounded-lg px-4 py-2 text-sm">
@@ -69,7 +69,7 @@ export const SelectionDesk: React.FC<SelectionDeskProps> = ({ onSelectApplicatio
           <tbody className="divide-y">
             {(result?.candidates || []).map((candidate) => (
               <tr key={candidate.application_id}>
-                <td className="p-3 font-bold">{candidate.rank ?? '—'}{candidate.within_demo_slots && <span className="ml-2 text-[10px] text-emerald-800">within slots</span>}</td>
+                <td className="p-3 font-bold">{candidate.rank ?? '—'}{candidate.within_available_slots && <span className="ml-2 text-[10px] text-emerald-800">within slots</span>}</td>
                 <td className="p-3 font-mono">{candidate.application_no}</td>
                 <td className="p-3">{candidate.applicant_name}<div className="text-xs text-slate-500">{candidate.status}</div></td>
                 <td className="p-3">{candidate.marks ?? 'Not available'}</td>

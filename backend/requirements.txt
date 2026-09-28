@@ -2,12 +2,18 @@
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 
-# Database & ORM
-sqlalchemy>=2.0.0
+# Database & ODM
+pymongo>=4.6.0
 
 # Data Validation & Models
 pydantic>=2.4.0
 email-validator>=2.0.0
+
+# Password hashing
+bcrypt>=4.1.0
+
+# Environment configuration
+python-dotenv>=1.0.0
 
 # File Upload Support
 python-multipart>=0.0.6

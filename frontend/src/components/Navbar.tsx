@@ -1,13 +1,14 @@
 import React from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { BookOpen, FileEdit, CheckSquare, ShieldAlert, ListChecks, Award } from 'lucide-react';
+import { BookOpen, FileEdit, CheckSquare, ShieldAlert, ListChecks, Award, LogOut } from 'lucide-react';
 
 interface NavbarProps {
   currentTab: string;
   onSelectTab: (tab: string) => void;
+  onSignOut: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ currentTab, onSelectTab }) => {
+export const Navbar: React.FC<NavbarProps> = ({ currentTab, onSelectTab, onSignOut }) => {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
 
@@ -89,8 +90,10 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, onSelectTab }) => {
             )}
           </div>
 
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-slate-400 hidden md:inline">Current View:</span>
+          <div className="flex items-center gap-3 text-xs py-1 pl-3 sm:pl-0">
+            <span className="text-slate-300 hidden md:inline" title={user?.email}>
+              {user?.full_name}
+            </span>
             <span
               className={`px-2 py-0.5 rounded font-medium ${
                 isAdmin
@@ -100,6 +103,14 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, onSelectTab }) => {
             >
               {isAdmin ? 'Adjudicator Desk' : 'Applicant Portal'}
             </span>
+            <button
+              onClick={onSignOut}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-100 font-semibold transition"
+              title="Sign out"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Sign Out</span>
+            </button>
           </div>
         </div>
       </div>

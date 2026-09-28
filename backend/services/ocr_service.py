@@ -1,3 +1,4 @@
+import io
 import json
 import os
 import re
@@ -91,13 +92,19 @@ def _tesseract_text_and_confidence(image: Image.Image) -> Tuple[str, Optional[fl
     return text, average_confidence
 
 
-def _extract_text_from_file(file_path: str) -> Tuple[str, str, Optional[float]]:
-    extension = os.path.splitext(file_path)[1].lower()
+def _extract_text_from_bytes(content: bytes, file_name: str) -> Tuple[str, str, Optional[float]]:
+    """Extract text from an in-memory document.
+
+    Uploaded files are held in MongoDB GridFS rather than on disk, so extraction
+    works from the uploaded bytes. The file name is consulted only to choose the
+    extractor, never to locate the data.
+    """
+    extension = os.path.splitext(file_name or "")[1].lower()
     if extension == ".pdf":
         page_texts = []
         used_ocr = False
         confidences = []
-        with pymupdf.open(file_path) as document:
+        with pymupdf.open(stream=io.BytesIO(content), filetype="pdf") as document:
             if document.page_count > 15:
                 raise ValueError("PDFs may contain no more than 15 pages.")
             for page in document:
@@ -119,13 +126,12 @@ def _extract_text_from_file(file_path: str) -> Tuple[str, str, Optional[float]]:
         return "\n".join(page_texts), method, confidence
 
     if extension in {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}:
-        with Image.open(file_path) as image:
+        with Image.open(io.BytesIO(content)) as image:
             text, confidence = _tesseract_text_and_confidence(image.convert("RGB"))
         return text, "Tesseract OCR", confidence
 
     if extension == ".txt":
-        with open(file_path, "r", encoding="utf-8", errors="strict") as stream:
-            return stream.read(), "Plain text extraction", None
+        return content.decode("utf-8"), "Plain text extraction", None
 
     raise ValueError("Unsupported document format.")
 
@@ -273,6 +279,12 @@ def _extract_institution_name(text: str) -> Optional[str]:
 
 
 def _extract_course_level(text: str, scheme_code: str) -> Optional[str]:
+    """Infer the study level from the document text.
+
+    The returned string must match a value in the scheme's `course_level` rule
+    exactly, including its apostrophe, otherwise the rule engine reports a false
+    mismatch against an otherwise correct declaration.
+    """
     lowered = text.lower()
     if scheme_code == "TOP_CLASS":
         if any(term in lowered for term in ("postgraduate", "post-graduate", "master", "m.sc", "msc", "m.a.", "mba")):
@@ -289,7 +301,7 @@ def _extract_course_level(text: str, scheme_code: str) -> Optional[str]:
     if "ph.d" in lowered or "phd" in lowered or "doctor of philosophy" in lowered:
         return "Ph.D"
     if any(term in lowered for term in ("master", "msc", "m.sc", "m.a.", "mba")):
-        return "Master’s" if scheme_code == "NOS" else "Master's Degree"
+        return "Master’s"
     return None
 
 
@@ -429,10 +441,21 @@ def parse_ocr_text(text: str, doc_type: str) -> Dict[str, Any]:
     return parsed
 
 
-def process_document_ocr(file_path: str, doc_type: str, scheme_code: Optional[str] = None) -> Dict[str, Any]:
+def process_document_ocr(
+    content: bytes,
+    doc_type: str,
+    scheme_code: Optional[str] = None,
+    file_name: str = "",
+) -> Dict[str, Any]:
+    """Extract text and configured fields from an uploaded document.
+
+    `content` is the uploaded bytes and `file_name` only selects the extractor.
+    Failures are reported as a FAILED result rather than raised, so one bad
+    document cannot fail the upload request that carried it.
+    """
     try:
-        extracted_text, method, confidence = _extract_text_from_file(file_path)
-    except (OSError, ValueError, RuntimeError, pymupdf.FileDataError) as exc:
+        extracted_text, method, confidence = _extract_text_from_bytes(content, file_name)
+    except (OSError, ValueError, RuntimeError, pymupdf.FileDataError, UnicodeDecodeError) as exc:
         return {
             "extracted_text": "",
             "parsed_fields": {},

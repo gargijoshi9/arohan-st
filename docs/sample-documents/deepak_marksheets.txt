@@ -1,0 +1,25 @@
+============================================================================
+BOARD OF SECONDARY EDUCATION, ODISHA
+STATEMENT OF MARKS, HIGH SCHOOL CERTIFICATE EXAMINATION
+============================================================================
+
+Candidate Name:   DEEPAK NAYAK
+Roll Number:      2104827
+Class / Standard: X
+Examination Year: 2024
+
+Subject                     | Marks Obtained | Maximum | Total
+--------------------------- | -------------: | ------: | ------
+Odia                        |           412  |     500 |  82.4%
+English                     |           338  |     500 |  67.6%
+Mathematics                 |           351  |     500 |  70.2%
+Social Science              |           327  |     400 |  81.8%
+General Science             |           349  |     500 |  69.8%
+Information Technology      |           396  |     500 |  79.2%
+
+Aggregate Percentage: 74.0%
+Result: PASS (First Division)
+
+Note: This is a sample document for interface testing. It is not an official
+record and confers no entitlement.
+============================================================================

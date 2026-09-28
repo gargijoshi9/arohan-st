@@ -1,27 +1,49 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { UserCheck, ArrowRight, Lock } from 'lucide-react';
+import { UserCheck, ArrowRight, Lock, Mail, Phone, UserPlus, LogIn } from 'lucide-react';
 
 interface ApplicantLoginProps {
   onLoginSuccess: () => void;
+  initialMode?: Mode;
 }
 
-export const ApplicantLogin: React.FC<ApplicantLoginProps> = ({ onLoginSuccess }) => {
-  const { loginPortal } = useAuth();
-  const [name, setName] = useState('');
+type Mode = 'login' | 'register';
+
+const inputClass =
+  'w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:outline-none';
+const fieldLabel = 'block text-xs font-semibold text-slate-700 mb-1';
+
+export const ApplicantLogin: React.FC<ApplicantLoginProps> = ({ onLoginSuccess, initialMode = 'login' }) => {
+  const { login, register } = useAuth();
+  const [mode, setMode] = useState<Mode>(initialMode);
+
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const isOfficerEmail = email.trim().toLowerCase() === 'motaofficer@gmail.com';
+  const [busy, setBusy] = useState(false);
+
+  const switchMode = (next: Mode) => {
+    setMode(next);
+    setError(null);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setBusy(true);
+    setError(null);
     try {
-      await loginPortal(name, email, password);
-      setError(null);
+      if (mode === 'register') {
+        await register({ full_name: fullName, email, phone, password });
+      } else {
+        await login(email, password);
+      }
       onLoginSuccess();
-    } catch (loginError) {
-      setError(loginError instanceof Error ? loginError.message : 'Sign-in failed.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sign-in failed. Please try again.');
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -31,87 +53,139 @@ export const ApplicantLogin: React.FC<ApplicantLoginProps> = ({ onLoginSuccess }
         <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-900 mx-auto flex items-center justify-center mb-3">
           <UserCheck className="w-6 h-6" />
         </div>
-        <h2 className="text-xl font-bold text-slate-900">ST Scholar Portal Login</h2>
+        <h2 className="text-xl font-bold text-slate-900">
+          {mode === 'register' ? 'Create Applicant Account' : 'Portal Sign In'}
+        </h2>
         <p className="text-xs text-slate-500 mt-1">
-          Ministry of Tribal Affairs — Scholarship, Fellowship & Officer Access
+          Ministry of Tribal Affairs — Scholarship, Fellowship &amp; Officer Access
         </p>
       </div>
 
+      <div className="flex mb-5 rounded-lg border border-slate-200 p-1 bg-slate-50 text-xs font-semibold">
+        <button
+          type="button"
+          onClick={() => switchMode('login')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md transition ${
+            mode === 'login' ? 'bg-white text-blue-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <LogIn className="w-3.5 h-3.5" />
+          Sign In
+        </button>
+        <button
+          type="button"
+          onClick={() => switchMode('register')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md transition ${
+            mode === 'register' ? 'bg-white text-blue-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <UserPlus className="w-3.5 h-3.5" />
+          Register
+        </button>
+      </div>
+
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name</label>
-          <input
-            type="text"
-            required={!isOfficerEmail}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:outline-none"
-            placeholder="Enter your full name"
-          />
-        </div>
+        {mode === 'register' && (
+          <div>
+            <label className={fieldLabel} htmlFor="full-name">
+              Full Name
+            </label>
+            <input
+              id="full-name"
+              type="text"
+              required
+              minLength={2}
+              maxLength={120}
+              autoComplete="name"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              className={inputClass}
+              placeholder="Enter your full name as per your records"
+            />
+          </div>
+        )}
 
         <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1">
-            {isOfficerEmail ? 'Officer Username (email)' : 'Email Address'}
+          <label className={fieldLabel} htmlFor="email">
+            Email Address
           </label>
-          <input
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:outline-none"
-            placeholder="Enter your email"
-          />
+          <div className="relative">
+            <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            <input
+              id="email"
+              type="email"
+              required
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className={`${inputClass} pl-9`}
+              placeholder="you@example.com"
+            />
+          </div>
         </div>
 
-        {isOfficerEmail && (
+        {mode === 'register' && (
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Officer Password</label>
+            <label className={fieldLabel} htmlFor="phone">
+              Mobile Number <span className="font-normal text-slate-400">(optional)</span>
+            </label>
             <div className="relative">
-              <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
               <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                placeholder="Enter password"
+                id="phone"
+                type="tel"
+                autoComplete="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                className={`${inputClass} pl-9`}
+                placeholder="Contact number"
               />
             </div>
-          </div>
-        )}
-        {!isOfficerEmail && (
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Demo verification code</label>
-            <div className="relative">
-              <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-              <input
-                type="password"
-                required
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                placeholder="Enter demo code"
-              />
-            </div>
-            <p className="mt-1 text-[10px] text-slate-500">Local prototype code: 123456. Real OTP delivery is not configured.</p>
           </div>
         )}
 
-        {error && <p role="alert" className="text-xs text-rose-700">{error}</p>}
+        <div>
+          <label className={fieldLabel} htmlFor="password">
+            Password
+          </label>
+          <div className="relative">
+            <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            <input
+              id="password"
+              type="password"
+              required
+              autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className={`${inputClass} pl-9`}
+              placeholder={mode === 'register' ? 'Create a password' : 'Enter your password'}
+            />
+          </div>
+          {mode === 'register' && (
+            <p className="mt-1 text-[10px] text-slate-500">
+              Use at least 8 characters with a mix of upper and lower case letters and digits.
+            </p>
+          )}
+        </div>
+
+        {error && (
+          <p role="alert" className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+            {error}
+          </p>
+        )}
 
         <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-600">
-          <span className="font-semibold text-slate-700">Scheduled Tribe (ST) Verification:</span>{' '}
-          Prototype sign-in uses a server-validated demo code. It does not verify identity or ST certificates.
+          <span className="font-semibold text-slate-700">Account security:</span> Passwords are stored only as bcrypt
+          hashes. Access to any applicant record is limited to the account that created it, and every officer action is
+          written to the audit trail.
         </div>
 
         <button
           type="submit"
-          className="w-full py-2.5 px-4 bg-blue-900 hover:bg-blue-800 text-white font-medium text-sm rounded-lg shadow transition flex items-center justify-center gap-2"
+          disabled={busy}
+          className="w-full py-2.5 px-4 bg-blue-900 hover:bg-blue-800 disabled:opacity-60 disabled:cursor-not-allowed text-white font-medium text-sm rounded-lg shadow transition flex items-center justify-center gap-2"
         >
-          <span>Continue to Portal</span>
+          <span>{busy ? 'Please wait…' : mode === 'register' ? 'Create Account' : 'Sign In'}</span>
           <ArrowRight className="w-4 h-4" />
         </button>
       </form>

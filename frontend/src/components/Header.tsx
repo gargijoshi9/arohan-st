@@ -44,11 +44,11 @@ export const Header: React.FC = () => {
                   user.role === 'admin' ? 'bg-emerald-700' : 'bg-blue-800'
                 }`}
               >
-                {user.name.charAt(0)}
+                {user.full_name.charAt(0)}
               </div>
               <div className="text-left">
                 <div className="font-semibold text-slate-900 leading-tight flex items-center gap-1">
-                  <span>{user.name}</span>
+                  <span>{user.full_name}</span>
                   {user.role === 'admin' ? (
                     <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-medium">
                       Admin

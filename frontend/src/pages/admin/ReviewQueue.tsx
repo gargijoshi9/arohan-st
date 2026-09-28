@@ -21,6 +21,9 @@ interface ReviewQueueProps {
 
 export const ReviewQueue: React.FC<ReviewQueueProps> = ({ onSelectApplication }) => {
   const [applications, setApplications] = useState<Application[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,7 +41,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({ onSelectApplication })
     api.getDashboard().then(setDashboard).catch((err: unknown) => {
       setReportError(err instanceof Error ? err.message : 'Dashboard metrics are unavailable.');
     });
-  }, [sortBy, order, statusFilter, schemeFilter]);
+  }, [sortBy, order, statusFilter, schemeFilter, searchQuery, page]);
 
   const handleReportDownload = async () => {
     setReportError('');
@@ -53,33 +56,34 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({ onSelectApplication })
     setLoading(true);
     setError(null);
     try {
+      // Searching happens on the server so pagination stays correct.
       const data = await api.getAdminQueue({
         sort_by: sortBy,
-        order: order,
+        order,
         status: statusFilter,
-        scheme_code: schemeFilter
+        scheme_code: schemeFilter,
+        search: searchQuery.trim() || undefined,
+        page,
+        page_size: 25
       });
-      setApplications(data);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load verification queue');
+      setApplications(data.items);
+      setTotalPages(Math.max(data.total_pages, 1));
+      setTotal(data.total);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load verification queue');
     } finally {
       setLoading(false);
     }
   };
 
-  const filteredApplications = applications.filter((app) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      app.application_no.toLowerCase().includes(q) ||
-      app.applicant_name.toLowerCase().includes(q) ||
-      app.applicant_email.toLowerCase().includes(q)
-    );
-  });
+  // Any filter change returns to the first page.
+  const resetToFirstPage = (setter: (value: string) => void) => (value: string) => {
+    setter(value);
+    setPage(1);
+  };
 
   // Calculate quick metrics
   const totalCount = applications.length;
-  const approvedCount = applications.filter((a) => a.status === 'APPROVED').length;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -113,7 +117,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({ onSelectApplication })
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
           <div className="text-[11px] font-semibold text-slate-500 uppercase">Total Applications</div>
-          <div className="text-2xl font-bold text-slate-900 mt-1">{dashboard?.total_applications ?? totalCount}</div>
+          <div className="text-2xl font-bold text-slate-900 mt-1">{dashboard?.total_applications ?? total}</div>
           <div className="text-[11px] text-slate-400 mt-0.5">Across all configured schemes</div>
         </div>
 
@@ -137,7 +141,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({ onSelectApplication })
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
           <div className="text-[11px] font-semibold text-slate-500 uppercase">Active Awards</div>
-          <div className="text-2xl font-bold text-slate-900 mt-1">{dashboard?.active_awards ?? approvedCount}</div>
+          <div className="text-2xl font-bold text-slate-900 mt-1">{dashboard?.active_awards ?? 0}</div>
           <div className="text-[11px] text-slate-400 mt-0.5">{dashboard?.pending_payments ?? 0} payment records pending</div>
         </div>
       </div>
@@ -169,7 +173,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({ onSelectApplication })
             type="text"
             placeholder="Search by name or app no..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => resetToFirstPage(setSearchQuery)(e.target.value)}
             className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 text-xs"
           />
         </div>
@@ -180,7 +184,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({ onSelectApplication })
             <span className="text-slate-500 font-medium">Scheme:</span>
             <select
               value={schemeFilter}
-              onChange={(e) => setSchemeFilter(e.target.value)}
+              onChange={(e) => resetToFirstPage(setSchemeFilter)(e.target.value)}
               className="px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
             >
               <option value="ALL">All Schemes</option>
@@ -197,7 +201,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({ onSelectApplication })
             <span className="text-slate-500 font-medium">Status:</span>
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => resetToFirstPage(setStatusFilter)(e.target.value)}
               className="px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
             >
               <option value="ALL">All Statuses</option>
@@ -208,6 +212,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({ onSelectApplication })
               <option value="NOT_SELECTED">Not Selected</option>
               <option value="DEFICIENT">Deficient</option>
               <option value="REJECTED">Rejected</option>
+              <option value="WITHDRAWN">Withdrawn by Applicant</option>
             </select>
           </div>
 
@@ -235,7 +240,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({ onSelectApplication })
           </div>
         ) : error ? (
           <div className="p-6 text-center text-xs text-rose-700">{error}</div>
-        ) : filteredApplications.length === 0 ? (
+        ) : applications.length === 0 ? (
           <div className="text-center py-12 text-slate-500 text-xs">
             No applications match the current filter criteria.
           </div>
@@ -254,7 +259,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({ onSelectApplication })
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredApplications.map((app) => {
+                {applications.map((app) => {
                   const isFlagged = app.confidence_score < 60;
                   return (
                     <tr
@@ -304,6 +309,33 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({ onSelectApplication })
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Pagination */}
+        {!loading && !error && total > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200 bg-slate-50 text-xs text-slate-600">
+            <span>
+              Showing page <span className="font-semibold text-slate-800">{page}</span> of{' '}
+              <span className="font-semibold text-slate-800">{totalPages}</span> · {total} application
+              {total === 1 ? '' : 's'} match the current filters
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                disabled={page <= 1}
+                className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 transition"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                disabled={page >= totalPages}
+                className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 transition"
+              >
+                Next
+              </button>
+            </div>
           </div>
         )}
       </div>

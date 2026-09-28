@@ -1,0 +1,35 @@
+============================================================================
+COUNCIL OF SCIENTIFIC AND INDUSTRIAL RESEARCH / INSTITUTIONAL ROSTER
+ENTRY FOR THE MINISTRY OF TRIBAL AFFAIRS NOTIFIED LIST
+============================================================================
+
+Entry Ref: MOTA/NCL/2025/0233                          Date: 15-01-2025
+
+Notified Institution
+---------------------
+Institution Name:   Indian Institute of Technology (BHU), Varanasi
+City:               Varanasi, Uttar Pradesh
+Institution Category: Central/State Government funded
+Notified Institution: Yes
+Eligible Institution: Yes
+
+Notified Courses
+----------------
+Course Name: Bachelor of Technology in Computer Science and Engineering
+Course Level: Graduate
+Recognized Course: Yes
+Recognized Institution: Yes
+Recognition Status: Appears on the Ministry of Tribal Affairs notified list
+                    of institutions and approved courses for the Top Class
+                    Education Scheme for ST Students
+
+Verification: Ministry of Tribal Affairs roster cross-checked for the
+academic session 2025-26.
+
+[ISSUING AUTHORITY]
+Registrar / Authorized Institutional Nodal Officer
+Indian Institute of Technology (BHU), Varanasi
+
+Note: This is a sample document for interface testing. It is not an official
+record and confers no entitlement.
+============================================================================

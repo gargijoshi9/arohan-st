@@ -1,221 +1,366 @@
-import json
+"""Applicant-facing application workflow: submit, attach documents, track, correct.
+
+Every route is scoped to the signed-in applicant. Document uploads are stored
+outside the web root and are only ever served back through
+`/private-documents/{id}/file`, which re-checks ownership.
+"""
+
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from secrets import randbelow
-from typing import List
-from uuid import uuid4
+from typing import Any, Dict, List, Optional, Tuple
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy import func
-from sqlalchemy.orm import Session
-from database import get_db
-from models import Scheme, Applicant, Application, Document, AuditEvent, Notification, Award
-from schemas import ApplicationCreate, ApplicationCorrectionRequest, ApplicationRead, DocumentRead, RuleEvaluation
-from security import Principal, require_applicant, require_principal
+from pymongo.database import Database
+from pymongo.errors import DuplicateKeyError
+
+from database import APPLICATIONS, APPLICANTS, DOCUMENTS, NOTIFICATIONS, get_db, next_id, utcnow
+from models import (
+    DOCUMENT_DEFICIENT,
+    DOCUMENT_UPLOADED,
+    LOCKED_STATUSES,
+    OCR_FAILED,
+    OCR_PARTIAL,
+    OCR_USABLE_STATUSES,
+    ROLE_APPLICANT,
+    STATUS_DEFICIENT,
+    STATUS_SUBMITTED,
+    STATUS_UNDER_REVIEW,
+    STATUS_WITHDRAWN,
+)
+from schemas import (
+    ApplicationCorrectionRequest,
+    ApplicationCreate,
+    ApplicationRead,
+    AwardRead,
+    DocumentRead,
+    NotificationRead,
+    NotificationReadResult,
+)
+from security import Principal, normalise_email, require_applicant, require_principal
+from services import storage
 from services.ocr_service import process_document_ocr
+from services.repository import (
+    application_payload,
+    application_payloads,
+    award_payloads,
+    configured_document_ids,
+    document_payload,
+    get_applicant_by_user,
+    get_application,
+    get_document_by_type,
+    get_documents,
+    get_scheme_by_code,
+    list_awards,
+    list_notifications,
+    record_audit,
+    required_document_ids,
+    rule_check_documents,
+    scheme_config,
+)
 from services.rule_engine import evaluate_application_rules
 
 router = APIRouter(prefix="/applications", tags=["Applications"])
-UPLOAD_DIR = Path(__file__).resolve().parent.parent / "uploads"
+
 ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".txt"}
 MAX_FILE_SIZE = 10 * 1024 * 1024
 
+# Magic-byte prefixes, so a renamed executable is rejected before OCR runs.
+_FILE_SIGNATURES = {
+    ".pdf": (b"%PDF",),
+    ".png": (b"\x89PNG\r\n\x1a\n",),
+    ".jpg": (b"\xff\xd8",),
+    ".jpeg": (b"\xff\xd8",),
+}
+
+
+# --- Helpers ---
+
 def generate_application_no(scheme_code: str) -> str:
-    return f"AROHAN-{scheme_code.upper()}-{datetime.now().year}-{randbelow(100000):05d}"
+    return f"AROHAN-{scheme_code.upper()}-{datetime.now(timezone.utc).year}-{randbelow(100000):05d}"
 
 
-def get_private_document_url(document: Document) -> str | None:
-    if not document.file_path:
+def unique_application_no(db: Database, scheme_code: str) -> str:
+    """Allocate an application number, retrying on the unlikely collision."""
+    for _ in range(8):
+        candidate = generate_application_no(scheme_code)
+        if not db[APPLICATIONS].find_one({"application_no": candidate}, {"_id": 1}):
+            return candidate
+    return f"AROHAN-{scheme_code.upper()}-{datetime.now(timezone.utc).year}-{next_id(db, APPLICATIONS):06d}"
+
+
+def owned_application(db: Database, application_id: int, principal: Principal) -> dict:
+    application = get_application(db, application_id)
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found")
+    if application.get("applicant_user_id") != principal.user_id:
+        raise HTTPException(status_code=403, detail="This application belongs to another account.")
+    return application
+
+
+def parse_annual_income(declared_fields: Dict[str, Any]) -> Optional[float]:
+    raw = declared_fields.get("annual_family_income")
+    if raw in (None, ""):
         return None
-    normalized_path = document.file_path.replace("\\", "/")
-    if normalized_path.startswith("/uploads/"):
-        root = UPLOAD_DIR
-        stored_path = root.joinpath(*Path(normalized_path).parts[2:])
-    elif normalized_path.startswith("/sample-documents/"):
-        root = UPLOAD_DIR.parent.parent / "docs" / "sample-documents"
-        stored_path = root.joinpath(*Path(normalized_path).parts[2:])
-    else:
-        return None
-    resolved = stored_path.resolve()
-    if resolved.is_relative_to(root.resolve()) and resolved.is_file():
-        return f"/private-documents/{document.id}/file"
-    return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="Annual family income must be a number.") from exc
+    if not math.isfinite(value):
+        raise HTTPException(status_code=422, detail="Annual family income must be a finite number.")
+    return value
 
 
-def format_application_response(app: Application) -> ApplicationRead:
-    declared_dict = json.loads(app.declared_data) if app.declared_data else {}
-    ai_eval_dict = json.loads(app.ai_evaluation) if app.ai_evaluation else None
-    ai_eval = RuleEvaluation(**ai_eval_dict) if ai_eval_dict else None
-    
-    docs = [
-        DocumentRead(
-            id=d.id,
-            doc_type=d.doc_type,
-            file_name=d.file_name,
-            file_path=get_private_document_url(d),
-            status=d.status,
-            extracted_text=d.extracted_text,
-            ocr_status=d.ocr_status,
-            ocr_confidence=d.ocr_confidence,
-            extraction_method=d.extraction_method,
-            parsed_fields=json.loads(d.parsed_fields) if d.parsed_fields else None,
-            failed_reason=d.failed_reason,
-            uploaded_at=d.uploaded_at
-        )
-        for d in app.documents
-    ]
-    
-    return ApplicationRead(
-        id=app.id,
-        application_no=app.application_no,
-        scheme_id=app.scheme_id,
-        scheme_code=app.scheme.code if app.scheme else "UNKNOWN",
-        scheme_name=app.scheme.name if app.scheme else "Scholarship",
-        applicant_id=app.applicant_id,
-        applicant_name=app.applicant.full_name if app.applicant else "Applicant",
-        applicant_email=app.applicant.email if app.applicant else "",
-        declared_data=declared_dict,
-        confidence_score=app.confidence_score,
-        status=app.status,
-        ai_evaluation=ai_eval,
-        admin_remarks=app.admin_remarks,
-        created_at=app.created_at,
-        updated_at=app.updated_at,
-        documents=docs,
-        merit_score=app.merit_score,
-        selection_rank=app.selection_rank
+def _values_match(declared_value: Any, extracted_value: Any) -> bool:
+    try:
+        return float(declared_value) == float(extracted_value)
+    except (TypeError, ValueError):
+        def normalise(value: Any) -> str:
+            return " ".join(str(value).strip().casefold().split()).removeprefix("the ")
+        return normalise(declared_value) == normalise(extracted_value)
+
+
+def _scored_evaluation(evaluation: Dict[str, Any], description: str) -> Dict[str, Any]:
+    """Recompute the indicator, pass state and summary from the mismatch list."""
+    errors = sum(item["severity"] == "ERROR" for item in evaluation["mismatches"])
+    warnings = sum(item["severity"] == "WARNING" for item in evaluation["mismatches"])
+    evaluation["pass_fail"] = errors == 0
+    evaluation["confidence_score"] = max(15.0, min(99.0, 98.0 - 20.0 * errors - 4.0 * warnings))
+    evaluation["summary"] = (
+        f"Rule checks flagged {errors} issue(s) and {warnings} warning(s); officer review required."
+        if errors or warnings
+        else f"No configured eligibility rule failures found. {len(evaluation['passed_checks'])} checks passed; "
+             "documents and claims still require official verification."
+    )
+    return evaluation
+
+
+def evaluate_with_documents(
+    db: Database,
+    application: dict,
+    declared_fields: Dict[str, Any],
+    config: Dict[str, Any],
+    mismatch_description: str,
+) -> Dict[str, Any]:
+    """Run the rule engine over declared data, then reconcile it with extracted document fields.
+
+    A value that the applicant declared but that the document contradicts is
+    reported as an error so an officer sees the conflict rather than silently
+    trusting either side.
+    """
+    documents = get_documents(db, application["id"])
+    usable = [doc for doc in documents if doc.get("ocr_status") in OCR_USABLE_STATUSES]
+
+    merged = dict(declared_fields)
+    for document in usable:
+        merged.update(document.get("parsed_fields") or {})
+
+    evaluation = evaluate_application_rules(
+        scheme_code=application.get("scheme_code", ""),
+        declared_fields=merged,
+        scheme_config=config,
+        documents=rule_check_documents(usable),
     )
 
-@router.post("", response_model=ApplicationRead)
+    for document in usable:
+        for field, extracted_value in (document.get("parsed_fields") or {}).items():
+            declared_value = declared_fields.get(field)
+            if declared_value is None or str(declared_value).strip() == "":
+                continue
+            if not _values_match(declared_value, extracted_value):
+                evaluation["mismatches"].append({
+                    "field": field,
+                    "label": field.replace("_", " ").title(),
+                    "declared_value": f"Applicant: {declared_value}; document: {extracted_value}",
+                    "expected_rule": "Application details should agree with the uploaded document",
+                    "severity": "ERROR",
+                    "description": mismatch_description,
+                })
+
+    for document in documents:
+        ocr_status = document.get("ocr_status", "PENDING")
+        if ocr_status in {"FAILED", "PENDING"}:
+            evaluation["mismatches"].append({
+                "field": f"doc_{document['doc_type']}_ocr",
+                "label": document["doc_type"].replace("_", " ").title(),
+                "declared_value": ocr_status,
+                "expected_rule": "Readable document with the expected information",
+                "severity": "ERROR",
+                "description": document.get("failed_reason") or "Document OCR needs a clearer replacement.",
+            })
+        elif ocr_status == OCR_PARTIAL:
+            evaluation["mismatches"].append({
+                "field": f"doc_{document['doc_type']}_ocr",
+                "label": document["doc_type"].replace("_", " ").title(),
+                "declared_value": ocr_status,
+                "expected_rule": "Expected fields extracted for officer review",
+                "severity": "WARNING",
+                "description": document.get("failed_reason") or "Some fields need manual officer verification.",
+            })
+
+    return _scored_evaluation(evaluation, mismatch_description)
+
+
+def derive_status(evaluation: Dict[str, Any], documents: List[dict], config: Dict[str, Any]) -> str:
+    """The status a submission should hold given its checks and uploaded documents."""
+    required = required_document_ids(config)
+    usable = {doc["doc_type"] for doc in documents if doc.get("ocr_status") in OCR_USABLE_STATUSES}
+    if required - usable:
+        return STATUS_DEFICIENT
+    has_partial = any(doc.get("ocr_status") == OCR_PARTIAL for doc in documents)
+    if not evaluation["pass_fail"] or has_partial:
+        return STATUS_UNDER_REVIEW
+    return STATUS_SUBMITTED
+
+
+# --- Submission ---
+
+@router.post("", response_model=ApplicationRead, status_code=201)
 def submit_application(
     payload: ApplicationCreate,
     principal: Principal = Depends(require_applicant),
-    db: Session = Depends(get_db)
+    db: Database = Depends(get_db),
 ):
-    """
-    Submit a scholarship/fellowship application.
-    Applies configured scheme rules; uploaded documents are OCR-checked after creation.
-    """
-    if payload.email.strip().lower() != principal.email:
+    """Submit an application for the signed-in applicant and run the configured checks."""
+    # An older client may still send an email. When one is supplied it must match
+    # the signed-in account, and the stored email always comes from the session.
+    if payload.email and normalise_email(payload.email) != principal.email:
         raise HTTPException(status_code=403, detail="Applications can only be submitted for the signed-in account.")
-    scheme = db.query(Scheme).filter(Scheme.code == payload.scheme_code.upper()).first()
+
+    scheme = get_scheme_by_code(db, payload.scheme_code)
     if not scheme:
         raise HTTPException(status_code=404, detail=f"Scheme '{payload.scheme_code}' not found")
-    docs_payload = payload.documents or []
-    if docs_payload:
-        raise HTTPException(
-            status_code=422,
-            detail="Submit the application first, then upload each document through the application document endpoint.",
-        )
-    
-    scheme_config = json.loads(scheme.config_json) if scheme.config_json else {}
-    
-    # Find or create applicant
-    applicant = db.query(Applicant).filter(func.lower(Applicant.email) == principal.email).first()
-    category = payload.declared_fields.get("category", "ST")
-    caste_no = payload.declared_fields.get("caste_certificate_no", "")
-    try:
-        annual_inc = float(payload.declared_fields["annual_family_income"]) if payload.declared_fields.get("annual_family_income") not in (None, "") else None
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(status_code=422, detail="Annual family income must be a number.") from exc
-    if annual_inc is not None and not math.isfinite(annual_inc):
-        raise HTTPException(status_code=422, detail="Annual family income must be a finite number.")
 
-    if not applicant:
-        applicant = Applicant(
-            full_name=payload.full_name,
-            email=principal.email,
-            phone=payload.phone,
-            category=category,
-            caste_certificate_no=caste_no,
-            annual_income=annual_inc
-        )
-        db.add(applicant)
-        db.commit()
-        db.refresh(applicant)
+    config = scheme_config(scheme)
+    full_name = payload.full_name.strip()
+    phone = (payload.phone or "").strip()
+    # The scheme form declares full_name, email and phone as required fields, so
+    # they have to be part of the data the rule engine inspects. They are taken
+    # from the signed-in account rather than trusted from the request body.
+    declared_fields = dict(payload.declared_fields)
+    declared_fields["full_name"] = full_name
+    declared_fields["email"] = principal.email
+    declared_fields["phone"] = phone
+    category = declared_fields.get("category") or "ST"
+    caste_number = declared_fields.get("caste_certificate_no") or None
+    annual_income = parse_annual_income(declared_fields)
+
+    # The applicant record mirrors the identity fields of the signed-in account.
+    applicant = get_applicant_by_user(db, principal.user_id)
+    if applicant is None:
+        applicant = {
+            "id": next_id(db, APPLICANTS),
+            "user_id": principal.user_id,
+            "full_name": full_name,
+            "email": principal.email,
+            "phone": phone,
+            "category": category,
+            "caste_certificate_no": caste_number,
+            "annual_income": annual_income,
+            "created_at": utcnow(),
+        }
+        db[APPLICANTS].insert_one(dict(applicant))
     else:
-        # update details
-        applicant.full_name = payload.full_name
-        applicant.phone = payload.phone or applicant.phone
-        applicant.category = category
-        applicant.caste_certificate_no = caste_no
-        applicant.annual_income = annual_inc
-        db.commit()
+        db[APPLICANTS].update_one(
+            {"id": applicant["id"]},
+            {"$set": {
+                "full_name": full_name,
+                "phone": phone or applicant.get("phone", ""),
+                "category": category,
+                "caste_certificate_no": caste_number,
+                "annual_income": annual_income,
+            }},
+        )
+        applicant.update({
+            "full_name": full_name,
+            "phone": phone or applicant.get("phone", ""),
+            "category": category,
+            "caste_certificate_no": caste_number,
+            "annual_income": annual_income,
+        })
 
-    docs_dict_list = []
-
-    # Run AI Rule Engine
-    eval_result = evaluate_application_rules(
-        scheme_code=scheme.code,
-        declared_fields=payload.declared_fields,
-        scheme_config=scheme_config,
-        documents=docs_dict_list
+    evaluation = _scored_evaluation(
+        evaluate_application_rules(
+            scheme_code=scheme["code"],
+            declared_fields=declared_fields,
+            scheme_config=config,
+            documents=[],
+        ),
+        "",
     )
 
-    # If critical errors exist, status can start as UNDER_REVIEW or DEFICIENT
-    # Default is SUBMITTED with AI flag
-    initial_status = "SUBMITTED"
-    if not eval_result["pass_fail"]:
-        initial_status = "DEFICIENT" if any(
-            mismatch["field"].startswith(("doc_", "required_")) for mismatch in eval_result["mismatches"]
-        ) else "UNDER_REVIEW"
+    status = STATUS_SUBMITTED
+    if not evaluation["pass_fail"]:
+        has_document_issue = any(
+            mismatch["field"].startswith(("doc_", "required_"))
+            for mismatch in evaluation["mismatches"]
+        )
+        status = STATUS_DEFICIENT if has_document_issue else STATUS_UNDER_REVIEW
 
-    app_record = Application(
-        application_no=generate_application_no(scheme.code),
-        scheme_id=scheme.id,
-        applicant_id=applicant.id,
-        declared_data=json.dumps(payload.declared_fields),
-        confidence_score=eval_result["confidence_score"],
-        status=initial_status,
-        ai_evaluation=json.dumps(eval_result),
-        admin_remarks=""
-    )
-    db.add(app_record)
-    db.commit()
-    db.refresh(app_record)
-    db.add(AuditEvent(
-        application_id=app_record.id,
+    application_id = next_id(db, APPLICATIONS)
+    record = {
+        "id": application_id,
+        "application_no": unique_application_no(db, scheme["code"]),
+        "scheme_id": scheme["id"],
+        "scheme_code": scheme["code"],
+        "applicant_id": applicant["id"],
+        "applicant_user_id": principal.user_id,
+        "declared_data": declared_fields,
+        "confidence_score": evaluation["confidence_score"],
+        "status": status,
+        "rule_evaluation": evaluation,
+        "admin_remarks": "",
+        "created_at": utcnow(),
+        "updated_at": utcnow(),
+    }
+    try:
+        db[APPLICATIONS].insert_one(dict(record))
+    except DuplicateKeyError as exc:
+        raise HTTPException(status_code=409, detail="Application number collision; please submit again.") from exc
+
+    record_audit(
+        db,
+        application_id=application_id,
         actor_email=principal.email,
         actor_role=principal.role,
         action="APPLICATION_SUBMITTED",
-        to_status=initial_status,
+        to_status=status,
         remarks="Application received; automated checks are advisory.",
-    ))
-    db.commit()
-    db.refresh(app_record)
+    )
 
-    return format_application_response(app_record)
+    return ApplicationRead(**application_payload(db, record))
 
-@router.post("/{app_id}/documents", response_model=DocumentRead)
+
+# --- Documents ---
+
+@router.post("/{app_id:int}/documents", response_model=DocumentRead)
 async def upload_document(
     app_id: int,
     file: UploadFile = File(...),
     doc_type: str = Form(...),
     principal: Principal = Depends(require_applicant),
-    db: Session = Depends(get_db)
+    db: Database = Depends(get_db),
 ):
-    """Store and OCR one required application document, then recalculate its checks."""
-    app = db.query(Application).filter(Application.id == app_id).first()
-    if not app:
-        raise HTTPException(status_code=404, detail="Application not found")
-    if app.applicant.email.strip().lower() != principal.email:
-        raise HTTPException(status_code=403, detail="This application belongs to another account.")
-    if app.status in {"APPROVED", "REJECTED", "SELECTED", "NOT_SELECTED"}:
+    """Store one required document, extract its text, and recalculate the application checks."""
+    application = owned_application(db, app_id, principal)
+    if application["status"] in LOCKED_STATUSES:
         raise HTTPException(status_code=409, detail="Documents cannot be changed after a final decision.")
-    previous_status = app.status
+
+    scheme_code = application.get("scheme_code", "")
+    scheme = get_scheme_by_code(db, scheme_code)
+    if not scheme:
+        raise HTTPException(status_code=404, detail="The scheme for this application is no longer configured.")
+    config = scheme_config(scheme)
+
+    doc_type = doc_type.strip()
+    if not configured_document_ids(config, doc_type):
+        raise HTTPException(status_code=400, detail="Document type is not configured for this scheme.")
 
     original_name = Path(file.filename or "document").name[:255]
     extension = Path(original_name).suffix.lower()
     if extension not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail="Upload a PDF, image, or TXT file.")
-
-    scheme_config = json.loads(app.scheme.config_json) if app.scheme and app.scheme.config_json else {}
-    allowed_doc_types = {
-        item["id"] for item in scheme_config.get("required_documents", [])
-        if isinstance(item, dict) and item.get("id")
-    }
-    if doc_type not in allowed_doc_types:
-        raise HTTPException(status_code=400, detail="Document type is not configured for this scheme.")
 
     content = await file.read(MAX_FILE_SIZE + 1)
     if not content:
@@ -223,349 +368,268 @@ async def upload_document(
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(status_code=413, detail="Files must be 10 MB or smaller.")
 
-    if extension == ".pdf" and not content.startswith(b"%PDF"):
-        raise HTTPException(status_code=400, detail="The selected file is not a valid PDF.")
-    if extension == ".png" and not content.startswith(b"\x89PNG\r\n\x1a\n"):
-        raise HTTPException(status_code=400, detail="The selected file is not a valid PNG image.")
-    if extension in {".jpg", ".jpeg"} and not content.startswith(b"\xff\xd8"):
-        raise HTTPException(status_code=400, detail="The selected file is not a valid JPEG image.")
+    for suffix, signatures in _FILE_SIGNATURES.items():
+        if extension == suffix and not content.startswith(signatures):
+            raise HTTPException(status_code=400, detail=f"The selected file is not a valid {suffix.upper()[1:]} file.")
 
-    upload_dir = UPLOAD_DIR / str(app_id)
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    stored_name = f"{uuid4().hex}{extension}"
-    file_path = upload_dir / stored_name
-    file_path.write_bytes(content)
-    ocr_result = process_document_ocr(str(file_path), doc_type, app.scheme.code if app.scheme else None)
-
-    existing_doc = db.query(Document).filter(Document.application_id == app_id, Document.doc_type == doc_type).first()
-    if existing_doc:
-        existing_doc.file_name = original_name
-        existing_doc.file_path = f"/uploads/{app_id}/{stored_name}"
-        existing_doc.status = "DEFICIENT" if ocr_result["ocr_status"] == "FAILED" else "UPLOADED"
-        existing_doc.extracted_text = ocr_result.get("extracted_text")
-        existing_doc.ocr_status = ocr_result["ocr_status"]
-        existing_doc.ocr_confidence = ocr_result.get("ocr_confidence")
-        existing_doc.extraction_method = ocr_result.get("extraction_method")
-        existing_doc.parsed_fields = json.dumps(ocr_result.get("parsed_fields") or {})
-        existing_doc.failed_reason = ocr_result.get("failed_reason")
-        doc = existing_doc
-    else:
-        doc = Document(
+    scheme_code = application.get("scheme_code", "")
+    try:
+        stored = storage.store(
+            db,
+            content,
+            file_name=original_name,
             application_id=app_id,
             doc_type=doc_type,
-            file_name=original_name,
-            file_path=f"/uploads/{app_id}/{stored_name}",
-            status="DEFICIENT" if ocr_result["ocr_status"] == "FAILED" else "UPLOADED",
-            extracted_text=ocr_result.get("extracted_text"),
-            ocr_status=ocr_result["ocr_status"],
-            ocr_confidence=ocr_result.get("ocr_confidence"),
-            extraction_method=ocr_result.get("extraction_method"),
-            parsed_fields=json.dumps(ocr_result.get("parsed_fields") or {}),
-            failed_reason=ocr_result.get("failed_reason")
         )
-        db.add(doc)
+    except storage.DocumentStorageError as exc:
+        raise HTTPException(status_code=503, detail="The document could not be saved. Please try again.") from exc
 
-    db.flush()
-    all_docs = db.query(Document).filter(Document.application_id == app_id).all()
-    declared = json.loads(app.declared_data) if app.declared_data else {}
-    verified_fields = dict(declared)
-    valid_docs = []
-    for stored_doc in all_docs:
-        parsed_fields = json.loads(stored_doc.parsed_fields) if stored_doc.parsed_fields else {}
-        if stored_doc.ocr_status in {"SUCCESS", "PARTIAL"}:
-            verified_fields.update(parsed_fields)
-            valid_docs.append({"doc_type": stored_doc.doc_type, "file_name": stored_doc.file_name})
-    ai_eval = evaluate_application_rules(
-        scheme_code=app.scheme.code if app.scheme else "NFST",
-        declared_fields=verified_fields,
-        scheme_config=scheme_config,
-        documents=valid_docs
-    )
-    for stored_doc in all_docs:
-        parsed_fields = json.loads(stored_doc.parsed_fields) if stored_doc.parsed_fields else {}
-        for field, extracted_value in parsed_fields.items():
-            declared_value = declared.get(field)
-            if declared_value is None or str(declared_value).strip() == "":
-                continue
-            try:
-                values_match = float(declared_value) == float(extracted_value)
-            except (TypeError, ValueError):
-                declared_text = " ".join(str(declared_value).strip().casefold().split())
-                extracted_text = " ".join(str(extracted_value).strip().casefold().split())
-                values_match = declared_text.removeprefix("the ") == extracted_text.removeprefix("the ")
-            if not values_match:
-                ai_eval["mismatches"].append({
-                    "field": field,
-                    "label": field.replace("_", " ").title(),
-                    "declared_value": f"Applicant: {declared_value}; document: {extracted_value}",
-                    "expected_rule": "Application details should agree with the uploaded document",
-                    "severity": "ERROR",
-                    "description": "The value extracted from the document differs from the applicant's declaration; officer review is required.",
-                })
-    for stored_doc in all_docs:
-        if stored_doc.ocr_status in {"FAILED", "PENDING"}:
-            ai_eval["mismatches"].append({
-                "field": f"doc_{stored_doc.doc_type}_ocr",
-                "label": stored_doc.doc_type.replace("_", " ").title(),
-                "declared_value": stored_doc.ocr_status,
-                "expected_rule": "Readable document with the expected information",
-                "severity": "ERROR",
-                "description": stored_doc.failed_reason or "Document OCR needs a clearer replacement.",
-            })
-        elif stored_doc.ocr_status == "PARTIAL":
-            ai_eval["mismatches"].append({
-                "field": f"doc_{stored_doc.doc_type}_ocr",
-                "label": stored_doc.doc_type.replace("_", " ").title(),
-                "declared_value": stored_doc.ocr_status,
-                "expected_rule": "Expected fields extracted for officer review",
-                "severity": "WARNING",
-                "description": stored_doc.failed_reason or "Some fields need manual officer verification.",
-            })
-    has_errors = any(item["severity"] == "ERROR" for item in ai_eval["mismatches"])
-    ai_eval["pass_fail"] = not has_errors
-    ai_eval["confidence_score"] = max(
-        15.0,
-        min(
-            99.0,
-            98.0
-            - 20.0 * sum(item["severity"] == "ERROR" for item in ai_eval["mismatches"])
-            - 4.0 * sum(item["severity"] == "WARNING" for item in ai_eval["mismatches"]),
-        ),
-    )
-    error_count = sum(item["severity"] == "ERROR" for item in ai_eval["mismatches"])
-    warning_count = sum(item["severity"] == "WARNING" for item in ai_eval["mismatches"])
-    if error_count or warning_count:
-        ai_eval["summary"] = (
-            f"Rule checks flagged {error_count} issue(s) and {warning_count} warning(s); officer review required."
-        )
-    app.ai_evaluation = json.dumps(ai_eval)
-    app.confidence_score = ai_eval["confidence_score"]
-    required_doc_ids = {
-        item["id"] for item in scheme_config.get("required_documents", [])
-        if isinstance(item, dict) and item.get("required") and item.get("id")
+    ocr_result = process_document_ocr(content, doc_type, scheme_code, file_name=original_name)
+    document_status = DOCUMENT_DEFICIENT if ocr_result["ocr_status"] == OCR_FAILED else DOCUMENT_UPLOADED
+
+    existing = get_document_by_type(db, app_id, doc_type)
+    common = {
+        "file_name": original_name,
+        "gridfs_id": stored.gridfs_id,
+        "media_type": stored.media_type,
+        "size_bytes": stored.length,
+        "status": document_status,
+        "extracted_text": ocr_result.get("extracted_text"),
+        "ocr_status": ocr_result["ocr_status"],
+        "ocr_confidence": ocr_result.get("ocr_confidence"),
+        "extraction_method": ocr_result.get("extraction_method"),
+        "parsed_fields": ocr_result.get("parsed_fields") or {},
+        "failed_reason": ocr_result.get("failed_reason"),
+        "uploaded_at": utcnow(),
     }
-    successful_doc_ids = {
-        stored_doc.doc_type for stored_doc in all_docs
-        if stored_doc.ocr_status in {"SUCCESS", "PARTIAL"}
-    }
-    if required_doc_ids - successful_doc_ids:
-        app.status = "DEFICIENT"
+    if existing:
+        document_id = existing["id"]
+        # The replaced file is no longer referenced by any record, so drop its
+        # chunks rather than leaving copies in the bucket.
+        storage.discard(db, existing.get("gridfs_id"))
+        db[DOCUMENTS].update_one({"id": document_id}, {"$set": common})
     else:
-        has_partial_ocr = any(stored_doc.ocr_status == "PARTIAL" for stored_doc in all_docs)
-        app.status = "UNDER_REVIEW" if not ai_eval["pass_fail"] or has_partial_ocr else "SUBMITTED"
-    db.add(AuditEvent(
-        application_id=app.id,
+        document_id = next_id(db, DOCUMENTS)
+        db[DOCUMENTS].insert_one({
+            "id": document_id,
+            "application_id": app_id,
+            "doc_type": doc_type,
+            **common,
+        })
+
+    previous_status = application["status"]
+    declared_fields = application.get("declared_data") or {}
+    evaluation = evaluate_with_documents(
+        db,
+        application,
+        declared_fields,
+        config,
+        "The value extracted from the document differs from the applicant's declaration; officer review is required.",
+    )
+    documents = get_documents(db, app_id)
+    new_status = derive_status(evaluation, documents, config)
+
+    db[APPLICATIONS].update_one(
+        {"id": app_id},
+        {"$set": {
+            "rule_evaluation": evaluation,
+            "confidence_score": evaluation["confidence_score"],
+            "status": new_status,
+            "updated_at": utcnow(),
+        }},
+    )
+    record_audit(
+        db,
+        application_id=app_id,
         actor_email=principal.email,
         actor_role=principal.role,
         action=f"DOCUMENT_UPLOADED_{doc_type.upper()}",
         from_status=previous_status,
-        to_status=app.status,
-        remarks=f"OCR status: {doc.ocr_status}. OCR findings are advisory.",
-    ))
-
-    db.commit()
-    db.refresh(doc)
-    db.refresh(app)
-
-    return DocumentRead(
-        id=doc.id,
-        doc_type=doc.doc_type,
-        file_name=doc.file_name,
-        file_path=f"/private-documents/{doc.id}/file" if doc.file_path else None,
-        status=doc.status,
-        extracted_text=doc.extracted_text,
-        ocr_status=doc.ocr_status,
-        ocr_confidence=doc.ocr_confidence,
-        extraction_method=doc.extraction_method,
-        parsed_fields=json.loads(doc.parsed_fields) if doc.parsed_fields else None,
-        failed_reason=doc.failed_reason,
-        uploaded_at=doc.uploaded_at
+        to_status=new_status,
+        remarks=f"Extraction status: {ocr_result['ocr_status']}. Extracted values are advisory.",
     )
+
+    return DocumentRead(**document_payload(db[DOCUMENTS].find_one({"id": document_id})))
+
+
+# --- Retrieval ---
+
+@router.get("/mine", response_model=List[ApplicationRead])
+def get_my_applications(
+    principal: Principal = Depends(require_applicant),
+    db: Database = Depends(get_db),
+):
+    """Applications belonging to the signed-in applicant, newest first."""
+    records = list(
+        db[APPLICATIONS]
+        .find({"applicant_user_id": principal.user_id})
+        .sort("created_at", -1)
+    )
+    return [ApplicationRead(**payload) for payload in application_payloads(db, records)]
+
+
+@router.get("/awards", response_model=List[AwardRead])
+def get_my_awards(
+    principal: Principal = Depends(require_applicant),
+    db: Database = Depends(get_db),
+):
+    """Award and payment records for the signed-in applicant."""
+    application_ids = [
+        record["id"]
+        for record in db[APPLICATIONS].find({"applicant_user_id": principal.user_id}, {"id": 1})
+    ]
+    return [AwardRead(**payload) for payload in award_payloads(db, list_awards(db, application_ids))]
+
+
+@router.get("/notifications", response_model=List[NotificationRead])
+def get_my_notifications(
+    principal: Principal = Depends(require_applicant),
+    db: Database = Depends(get_db),
+):
+    """Notifications addressed to the signed-in applicant."""
+    applicant = get_applicant_by_user(db, principal.user_id)
+    if not applicant:
+        return []
+    return [NotificationRead(**item) for item in list_notifications(db, applicant["id"])]
+
+
+@router.post("/notifications/{notification_id:int}/read", response_model=NotificationReadResult)
+def mark_notification_read(
+    notification_id: int,
+    principal: Principal = Depends(require_applicant),
+    db: Database = Depends(get_db),
+):
+    """Mark one of the applicant's own notifications as read."""
+    notification = db[NOTIFICATIONS].find_one({"id": notification_id})
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    applicant = get_applicant_by_user(db, principal.user_id)
+    if not applicant or notification["applicant_id"] != applicant["id"]:
+        raise HTTPException(status_code=403, detail="This notification belongs to another account.")
+    if notification.get("read_at") is None:
+        db[NOTIFICATIONS].update_one(
+            {"id": notification_id},
+            {"$set": {"read_at": utcnow()}},
+        )
+        return NotificationReadResult(id=notification_id, read_at=utcnow())
+    return NotificationReadResult(id=notification_id, read_at=notification["read_at"])
+
 
 @router.get("/{app_id:int}", response_model=ApplicationRead)
 def get_application_status(
     app_id: int,
     principal: Principal = Depends(require_principal),
-    db: Session = Depends(get_db)
+    db: Database = Depends(get_db),
 ):
-    """Retrieve application status, declared data, and AI evaluation report."""
-    app = db.query(Application).filter(Application.id == app_id).first()
-    if not app:
+    """Application detail, available to its applicant and to officers."""
+    application = get_application(db, app_id)
+    if not application:
         raise HTTPException(status_code=404, detail="Application not found")
-    if principal.role == "applicant" and app.applicant.email.strip().lower() != principal.email:
+    if principal.role == ROLE_APPLICANT and application.get("applicant_user_id") != principal.user_id:
         raise HTTPException(status_code=403, detail="This application belongs to another account.")
-    return format_application_response(app)
-
-@router.get("/mine", response_model=List[ApplicationRead])
-def get_my_applications(
-    principal: Principal = Depends(require_applicant),
-    db: Session = Depends(get_db)
-):
-    applicant = db.query(Applicant).filter(Applicant.email == principal.email).first()
-    if not applicant:
-        return []
-    apps = db.query(Application).filter(Application.applicant_id == applicant.id).order_by(Application.created_at.desc()).all()
-    return [format_application_response(a) for a in apps]
+    return ApplicationRead(**application_payload(db, application))
 
 
-@router.get("/awards")
-def get_my_awards(
-    principal: Principal = Depends(require_applicant),
-    db: Session = Depends(get_db),
-):
-    awards = db.query(Award).join(Application).join(Applicant).filter(
-        Applicant.email == principal.email
-    ).order_by(Award.updated_at.desc()).all()
-    return [{
-        "id": award.id,
-        "application_id": award.application_id,
-        "application_no": award.application.application_no,
-        "scheme_code": award.application.scheme.code if award.application.scheme else "",
-        "award_status": award.award_status,
-        "approved_amount": award.approved_amount,
-        "currency": award.currency,
-        "start_date": award.start_date,
-        "end_date": award.end_date,
-        "next_review_date": award.next_review_date,
-        "officer_remarks": award.officer_remarks,
-        "updated_at": award.updated_at,
-        "payments": [{
-            "id": payment.id,
-            "period": payment.period,
-            "amount": payment.amount,
-            "status": payment.status,
-            "reference": payment.reference,
-            "paid_at": payment.paid_at,
-        } for payment in award.payments],
-    } for award in awards]
-
+# --- Correction and withdrawal ---
 
 @router.patch("/{app_id:int}", response_model=ApplicationRead)
 def correct_application(
     app_id: int,
     payload: ApplicationCorrectionRequest,
     principal: Principal = Depends(require_applicant),
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
 ):
-    app = db.query(Application).filter(Application.id == app_id).first()
-    if not app:
-        raise HTTPException(status_code=404, detail="Application not found")
-    if app.applicant.email.strip().lower() != principal.email:
-        raise HTTPException(status_code=403, detail="This application belongs to another account.")
-    if app.status != "DEFICIENT":
+    """Correct a deficient application and return it to officer review."""
+    application = owned_application(db, app_id, principal)
+    if application["status"] != STATUS_DEFICIENT:
         raise HTTPException(status_code=409, detail="Application corrections are enabled only while deficient.")
-    declared_email = str(payload.declared_fields.get("email", principal.email)).strip().lower()
-    if declared_email != principal.email:
-        raise HTTPException(status_code=422, detail="The registered email cannot be changed.")
-    if not payload.full_name.strip():
+
+    full_name = payload.full_name.strip()
+    if not full_name:
         raise HTTPException(status_code=422, detail="Applicant name cannot be empty.")
-    old_status = app.status
-    declared = dict(payload.declared_fields)
-    declared["full_name"] = payload.full_name.strip()
-    declared["email"] = principal.email
-    declared["phone"] = payload.phone or ""
-    config = json.loads(app.scheme.config_json) if app.scheme and app.scheme.config_json else {}
-    docs = [
-        {"doc_type": d.doc_type, "file_name": d.file_name}
-        for d in app.documents if d.ocr_status in {"SUCCESS", "PARTIAL"}
-    ]
-    evaluation = evaluate_application_rules(app.scheme.code, declared, config, docs)
-    for document in app.documents:
-        if document.ocr_status not in {"SUCCESS", "PARTIAL"} or not document.parsed_fields:
-            continue
-        extracted_fields = json.loads(document.parsed_fields)
-        for field, extracted_value in extracted_fields.items():
-            declared_value = declared.get(field)
-            if declared_value is None or str(declared_value).strip() == "":
-                continue
-            try:
-                values_match = float(declared_value) == float(extracted_value)
-            except (TypeError, ValueError):
-                normalize = lambda value: " ".join(str(value).strip().casefold().split()).removeprefix("the ")
-                values_match = normalize(declared_value) == normalize(extracted_value)
-            if not values_match:
-                evaluation["mismatches"].append({
-                    "field": field,
-                    "label": field.replace("_", " ").title(),
-                    "declared_value": f"Applicant: {declared_value}; document: {extracted_value}",
-                    "expected_rule": "Application details should agree with the uploaded document",
-                    "severity": "ERROR",
-                    "description": "The corrected declaration still differs from the uploaded document; officer review is required.",
-                })
-    error_count = sum(item["severity"] == "ERROR" for item in evaluation["mismatches"])
-    warning_count = sum(item["severity"] == "WARNING" for item in evaluation["mismatches"])
-    evaluation["pass_fail"] = error_count == 0
-    evaluation["confidence_score"] = max(15.0, min(99.0, 98.0 - 20.0 * error_count - 4.0 * warning_count))
-    if error_count or warning_count:
-        evaluation["summary"] = f"Rule checks flagged {error_count} issue(s) and {warning_count} warning(s); officer review required."
-    app.declared_data = json.dumps(declared)
-    app.confidence_score = evaluation["confidence_score"]
-    app.ai_evaluation = json.dumps(evaluation)
-    has_missing_required_items = any(
-        mismatch["field"].startswith(("doc_", "required_"))
-        for mismatch in evaluation["mismatches"]
+    declared_fields = dict(payload.declared_fields)
+    declared_fields["full_name"] = full_name
+    declared_fields["email"] = principal.email
+    declared_fields["phone"] = (payload.phone or "").strip()
+
+    scheme = get_scheme_by_code(db, application.get("scheme_code", ""))
+    if not scheme:
+        raise HTTPException(status_code=404, detail="The scheme for this application is no longer configured.")
+    config = scheme_config(scheme)
+
+    annual_income = parse_annual_income(declared_fields)
+    evaluation = evaluate_with_documents(
+        db,
+        application,
+        declared_fields,
+        config,
+        "The corrected declaration still differs from the uploaded document; officer review is required.",
     )
-    app.status = "DEFICIENT" if has_missing_required_items or not evaluation["pass_fail"] else "UNDER_REVIEW"
-    app.admin_remarks = ""
-    app.applicant.full_name = payload.full_name.strip()
-    app.applicant.phone = payload.phone or ""
-    app.applicant.category = declared.get("category", app.applicant.category)
-    app.applicant.caste_certificate_no = declared.get("caste_certificate_no", app.applicant.caste_certificate_no)
-    try:
-        applicant_income = declared.get("annual_family_income")
-        app.applicant.annual_income = float(applicant_income) if applicant_income not in (None, "") else None
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(status_code=422, detail="Annual family income must be a number.") from exc
-    if app.applicant.annual_income is not None and not math.isfinite(app.applicant.annual_income):
-        raise HTTPException(status_code=422, detail="Annual family income must be a finite number.")
-    db.add(AuditEvent(
-        application_id=app.id,
+    documents = get_documents(db, app_id)
+    new_status = derive_status(evaluation, documents, config)
+
+    previous_status = application["status"]
+    db[APPLICATIONS].update_one(
+        {"id": app_id},
+        {"$set": {
+            "declared_data": declared_fields,
+            "confidence_score": evaluation["confidence_score"],
+            "rule_evaluation": evaluation,
+            "status": new_status,
+            "admin_remarks": "",
+            "updated_at": utcnow(),
+        }},
+    )
+    db[APPLICANTS].update_one(
+        {"id": application["applicant_id"]},
+        {"$set": {
+            "full_name": full_name,
+            "phone": declared_fields.get("phone", ""),
+            "category": declared_fields.get("category"),
+            "caste_certificate_no": declared_fields.get("caste_certificate_no"),
+            "annual_income": annual_income,
+        }},
+    )
+    record_audit(
+        db,
+        application_id=app_id,
         actor_email=principal.email,
         actor_role=principal.role,
         action="APPLICANT_CORRECTION_SUBMITTED",
-        from_status=old_status,
-        to_status=app.status,
+        from_status=previous_status,
+        to_status=new_status,
         remarks="Applicant updated declared application details.",
-    ))
-    db.commit()
-    db.refresh(app)
-    return format_application_response(app)
+    )
+    return ApplicationRead(**application_payload(db, get_application(db, app_id)))
 
 
-@router.get("/notifications")
-def get_my_notifications(
+@router.post("/{app_id:int}/withdraw", response_model=ApplicationRead)
+def withdraw_application(
+    app_id: int,
+    reason: str = "",
     principal: Principal = Depends(require_applicant),
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
 ):
-    applicant = db.query(Applicant).filter(Applicant.email == principal.email).first()
-    if not applicant:
-        return []
-    notifications = db.query(Notification).filter(
-        Notification.applicant_id == applicant.id
-    ).order_by(Notification.created_at.desc()).all()
-    return [{
-        "id": item.id,
-        "application_id": item.application_id,
-        "title": item.title,
-        "message": item.message,
-        "read_at": item.read_at,
-        "created_at": item.created_at,
-    } for item in notifications]
-
-
-@router.post("/notifications/{notification_id:int}/read")
-def mark_notification_read(
-    notification_id: int,
-    principal: Principal = Depends(require_applicant),
-    db: Session = Depends(get_db),
-):
-    notification = db.query(Notification).filter(Notification.id == notification_id).first()
-    if not notification:
-        raise HTTPException(status_code=404, detail="Notification not found")
-    owner = db.query(Applicant).filter(Applicant.id == notification.applicant_id).first()
-    if not owner or owner.email.strip().lower() != principal.email:
-        raise HTTPException(status_code=403, detail="This notification belongs to another account.")
-    if notification.read_at is None:
-        notification.read_at = datetime.utcnow()
-        db.commit()
-    return {"id": notification.id, "read_at": notification.read_at}
+    """Withdraw an application that has not reached a final decision."""
+    application = owned_application(db, app_id, principal)
+    if application["status"] in LOCKED_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail="A decided or awarded application cannot be withdrawn; contact the officer desk.",
+        )
+    previous_status = application["status"]
+    db[APPLICATIONS].update_one(
+        {"id": app_id},
+        {"$set": {"status": STATUS_WITHDRAWN, "updated_at": utcnow()}},
+    )
+    record_audit(
+        db,
+        application_id=app_id,
+        actor_email=principal.email,
+        actor_role=principal.role,
+        action="APPLICATION_WITHDRAWN",
+        from_status=previous_status,
+        to_status=STATUS_WITHDRAWN,
+        remarks=(reason or "").strip() or "Withdrawn by the applicant.",
+    )
+    return ApplicationRead(**application_payload(db, get_application(db, app_id)))

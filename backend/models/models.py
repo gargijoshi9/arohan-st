@@ -1,132 +1,218 @@
-from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, Text, DateTime, ForeignKey
-from sqlalchemy.orm import relationship
-from database import Base
+"""Document shapes, status vocabularies and index definitions for MongoDB.
 
-class Scheme(Base):
-    __tablename__ = "schemes"
+There is no ORM layer: routers read and write plain dictionaries that match the
+field names documented here. Keeping the shapes and the allowed status values
+in a single module stops a typo from silently creating a new field.
+"""
 
-    id = Column(Integer, primary_key=True, index=True)
-    code = Column(String(50), unique=True, index=True, nullable=False)
-    name = Column(String(255), nullable=False)
-    description = Column(Text, nullable=True)
-    degree_level = Column(String(100), nullable=True)
-    max_income = Column(Float, nullable=True)
-    min_percentage = Column(Float, nullable=True)
-    config_json = Column(Text, nullable=False)
+from database import (
+    APPLICATIONS,
+    APPLICANTS,
+    AUDIT_EVENTS,
+    AWARDS,
+    AWARD_PAYMENTS,
+    COUNTERS,
+    DOCUMENTS,
+    NOTIFICATIONS,
+    SCHEMES,
+    USERS,
+    ensure_indexes,
+    utcnow,
+)
 
-    applications = relationship("Application", back_populates="scheme")
+# Collections are re-exported so routers can import everything they need from one place.
+COLLECTIONS = (
+    USERS,
+    SCHEMES,
+    APPLICANTS,
+    APPLICATIONS,
+    DOCUMENTS,
+    AUDIT_EVENTS,
+    NOTIFICATIONS,
+    AWARDS,
+    AWARD_PAYMENTS,
+    COUNTERS,
+)
 
-class Applicant(Base):
-    __tablename__ = "applicants"
+# --- Users ---
+ROLE_APPLICANT = "applicant"
+ROLE_OFFICER = "admin"
+USER_ROLES = (ROLE_APPLICANT, ROLE_OFFICER)
 
-    id = Column(Integer, primary_key=True, index=True)
-    full_name = Column(String(255), nullable=False)
-    email = Column(String(255), index=True, nullable=False)
-    phone = Column(String(50), nullable=True)
-    category = Column(String(50), default="ST")
-    caste_certificate_no = Column(String(100), nullable=True)
-    annual_income = Column(Float, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+# --- Application workflow ---
+STATUS_SUBMITTED = "SUBMITTED"
+STATUS_UNDER_REVIEW = "UNDER_REVIEW"
+STATUS_APPROVED = "APPROVED"
+STATUS_REJECTED = "REJECTED"
+STATUS_DEFICIENT = "DEFICIENT"
+STATUS_SELECTED = "SELECTED"
+STATUS_NOT_SELECTED = "NOT_SELECTED"
+STATUS_WITHDRAWN = "WITHDRAWN"
 
-    applications = relationship("Application", back_populates="applicant")
+APPLICATION_STATUSES = (
+    STATUS_SUBMITTED,
+    STATUS_UNDER_REVIEW,
+    STATUS_APPROVED,
+    STATUS_REJECTED,
+    STATUS_DEFICIENT,
+    STATUS_SELECTED,
+    STATUS_NOT_SELECTED,
+    STATUS_WITHDRAWN,
+)
 
-class Application(Base):
-    __tablename__ = "applications"
+# A final adjudication cannot be revisited, so document edits and new decisions
+# are refused once an application reaches one of these.
+FINAL_STATUSES = frozenset({STATUS_APPROVED, STATUS_REJECTED})
+# A withdrawn application is closed to the applicant, so it must not be edited
+# or withdrawn again.
+LOCKED_STATUSES = FINAL_STATUSES | {STATUS_SELECTED, STATUS_NOT_SELECTED, STATUS_WITHDRAWN}
 
-    id = Column(Integer, primary_key=True, index=True)
-    application_no = Column(String(100), unique=True, index=True, nullable=False)
-    scheme_id = Column(Integer, ForeignKey("schemes.id"), nullable=False)
-    applicant_id = Column(Integer, ForeignKey("applicants.id"), nullable=False)
-    declared_data = Column(Text, nullable=False)  # JSON string
-    confidence_score = Column(Float, default=90.0)  # 0 to 100
-    status = Column(String(50), default="SUBMITTED")  # SUBMITTED, UNDER_REVIEW, APPROVED, REJECTED, DEFICIENT
-    ai_evaluation = Column(Text, nullable=True)  # JSON string of rule evaluation & mismatches
-    admin_remarks = Column(Text, nullable=True)
-    merit_score = Column(Float, nullable=True)
-    selection_rank = Column(Integer, nullable=True)
-    selected_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+# --- Documents ---
+DOCUMENT_UPLOADED = "UPLOADED"
+DOCUMENT_VERIFIED = "VERIFIED"
+DOCUMENT_DEFICIENT = "DEFICIENT"
+DOCUMENT_STATUSES = (DOCUMENT_UPLOADED, DOCUMENT_VERIFIED, DOCUMENT_DEFICIENT)
 
-    scheme = relationship("Scheme", back_populates="applications")
-    applicant = relationship("Applicant", back_populates="applications")
-    documents = relationship("Document", back_populates="application", cascade="all, delete-orphan")
+OCR_PENDING = "PENDING"
+OCR_SUCCESS = "SUCCESS"
+OCR_PARTIAL = "PARTIAL"
+OCR_FAILED = "FAILED"
+# Statuses whose extracted fields are reliable enough to compare against the
+# applicant's declaration.
+OCR_USABLE_STATUSES = (OCR_SUCCESS, OCR_PARTIAL)
 
-class Document(Base):
-    __tablename__ = "documents"
+# --- Awards ---
+AWARD_ACTIVE = "ACTIVE"
+AWARD_ON_HOLD = "ON_HOLD"
+AWARD_COMPLETED = "COMPLETED"
+AWARD_TERMINATED = "TERMINATED"
+AWARD_STATES = (AWARD_ACTIVE, AWARD_ON_HOLD, AWARD_COMPLETED, AWARD_TERMINATED)
 
-    id = Column(Integer, primary_key=True, index=True)
-    application_id = Column(Integer, ForeignKey("applications.id"), nullable=False)
-    doc_type = Column(String(100), nullable=False)
-    file_name = Column(String(255), nullable=False)
-    file_path = Column(String(500), nullable=True)
-    status = Column(String(50), default="UPLOADED")  # UPLOADED, VERIFIED, DEFICIENT
-    extracted_text = Column(Text, nullable=True)
-    ocr_status = Column(String(50), default="PENDING")
-    ocr_confidence = Column(Float, nullable=True)
-    extraction_method = Column(String(50), nullable=True)
-    parsed_fields = Column(Text, nullable=True)
-    failed_reason = Column(Text, nullable=True)
-    uploaded_at = Column(DateTime, default=datetime.utcnow)
-
-    application = relationship("Application", back_populates="documents")
-
-
-class AuditEvent(Base):
-    __tablename__ = "audit_events"
-
-    id = Column(Integer, primary_key=True, index=True)
-    application_id = Column(Integer, ForeignKey("applications.id"), nullable=False, index=True)
-    actor_email = Column(String(255), nullable=False)
-    actor_role = Column(String(30), nullable=False)
-    action = Column(String(80), nullable=False)
-    from_status = Column(String(50), nullable=True)
-    to_status = Column(String(50), nullable=True)
-    remarks = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-
-
-class Notification(Base):
-    __tablename__ = "notifications"
-
-    id = Column(Integer, primary_key=True, index=True)
-    applicant_id = Column(Integer, ForeignKey("applicants.id"), nullable=False, index=True)
-    application_id = Column(Integer, ForeignKey("applications.id"), nullable=False, index=True)
-    title = Column(String(255), nullable=False)
-    message = Column(Text, nullable=False)
-    read_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+PAYMENT_PENDING = "PENDING"
+PAYMENT_PROCESSING = "PROCESSING"
+PAYMENT_PAID = "PAID"
+PAYMENT_FAILED = "FAILED"
+PAYMENT_STATES = (PAYMENT_PENDING, PAYMENT_PROCESSING, PAYMENT_PAID, PAYMENT_FAILED)
+# Payment states that still count against the approved award amount.
+COMMITTED_PAYMENT_STATES = (PAYMENT_PENDING, PAYMENT_PROCESSING, PAYMENT_PAID)
 
 
-class Award(Base):
-    __tablename__ = "awards"
+def new_user(
+    *,
+    user_id: int,
+    email: str,
+    password_hash: str,
+    role: str,
+    full_name: str,
+    phone: str = "",
+) -> dict:
+    return {
+        "id": user_id,
+        "email": email.lower(),
+        "password_hash": password_hash,
+        "role": role,
+        "full_name": full_name,
+        "phone": phone or "",
+        "is_active": True,
+        "created_at": utcnow(),
+        "last_login_at": None,
+    }
 
-    id = Column(Integer, primary_key=True, index=True)
-    application_id = Column(Integer, ForeignKey("applications.id"), unique=True, nullable=False, index=True)
-    award_status = Column(String(40), default="ACTIVE", nullable=False)
-    approved_amount = Column(Float, nullable=True)
-    currency = Column(String(3), default="INR", nullable=False)
-    start_date = Column(DateTime, nullable=True)
-    end_date = Column(DateTime, nullable=True)
-    next_review_date = Column(DateTime, nullable=True)
-    officer_remarks = Column(Text, nullable=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
-    application = relationship("Application")
-    payments = relationship("AwardPayment", back_populates="award", cascade="all, delete-orphan")
+def new_applicant(*, applicant_id: int, user_id: int, full_name: str, email: str, phone: str = "") -> dict:
+    return {
+        "id": applicant_id,
+        "user_id": user_id,
+        "full_name": full_name,
+        "email": email.lower(),
+        "phone": phone or "",
+        "category": "ST",
+        "caste_certificate_no": None,
+        "annual_income": None,
+        "created_at": utcnow(),
+    }
 
 
-class AwardPayment(Base):
-    __tablename__ = "award_payments"
+def new_audit_event(
+    *,
+    event_id: int,
+    application_id: int,
+    actor_email: str,
+    actor_role: str,
+    action: str,
+    from_status: str = None,
+    to_status: str = None,
+    remarks: str = "",
+) -> dict:
+    return {
+        "id": event_id,
+        "application_id": application_id,
+        "actor_email": actor_email,
+        "actor_role": actor_role,
+        "action": action,
+        "from_status": from_status,
+        "to_status": to_status,
+        "remarks": remarks,
+        "created_at": utcnow(),
+    }
 
-    id = Column(Integer, primary_key=True, index=True)
-    award_id = Column(Integer, ForeignKey("awards.id"), nullable=False, index=True)
-    period = Column(String(100), nullable=False)
-    amount = Column(Float, nullable=False)
-    status = Column(String(40), default="PENDING", nullable=False)
-    reference = Column(String(120), nullable=True)
-    paid_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-    award = relationship("Award", back_populates="payments")
+def new_notification(
+    *,
+    notification_id: int,
+    applicant_id: int,
+    application_id: int,
+    title: str,
+    message: str,
+) -> dict:
+    return {
+        "id": notification_id,
+        "applicant_id": applicant_id,
+        "application_id": application_id,
+        "title": title,
+        "message": message,
+        "read_at": None,
+        "created_at": utcnow(),
+    }
+
+
+__all__ = [
+    "COLLECTIONS",
+    "APPLICATION_STATUSES",
+    "AWARD_PAYMENTS",
+    "AWARD_STATES",
+    "COMMITTED_PAYMENT_STATES",
+    "DOCUMENT_STATUSES",
+    "DOCUMENT_DEFICIENT",
+    "DOCUMENT_UPLOADED",
+    "DOCUMENT_VERIFIED",
+    "FINAL_STATUSES",
+    "LOCKED_STATUSES",
+    "APPLICATION_STATUSES",
+    "OCR_PARTIAL",
+    "OCR_PENDING",
+    "OCR_SUCCESS",
+    "OCR_USABLE_STATUSES",
+    "PAYMENT_FAILED",
+    "PAYMENT_PAID",
+    "PAYMENT_PENDING",
+    "PAYMENT_PROCESSING",
+    "PAYMENT_STATES",
+    "ROLE_APPLICANT",
+    "ROLE_OFFICER",
+    "STATUS_APPROVED",
+    "STATUS_DEFICIENT",
+    "STATUS_NOT_SELECTED",
+    "STATUS_REJECTED",
+    "STATUS_SELECTED",
+    "STATUS_SUBMITTED",
+    "STATUS_UNDER_REVIEW",
+    "STATUS_WITHDRAWN",
+    "USER_ROLES",
+    "ensure_indexes",
+    "new_applicant",
+    "new_audit_event",
+    "new_notification",
+    "new_user",
+    "utcnow",
+]

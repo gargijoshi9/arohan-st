@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle2, Clock, AlertCircle, XCircle, FileSearch } from 'lucide-react';
+import { CheckCircle2, Clock, AlertCircle, XCircle, FileSearch, Undo2 } from 'lucide-react';
 
 interface StatusBadgeProps {
   status: string;
@@ -64,6 +64,13 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, className = ''
         <span className={`inline-flex items-center rounded-full bg-slate-100 text-slate-700 border border-slate-300 ${sizeClasses} ${className}`}>
           <XCircle className="w-3.5 h-3.5 text-slate-500" />
           <span>Rejected</span>
+        </span>
+      );
+    case 'WITHDRAWN':
+      return (
+        <span className={`inline-flex items-center rounded-full bg-slate-100 text-slate-600 border border-slate-300 ${sizeClasses} ${className}`}>
+          <Undo2 className="w-3.5 h-3.5 text-slate-500" />
+          <span>Withdrawn</span>
         </span>
       );
     default:

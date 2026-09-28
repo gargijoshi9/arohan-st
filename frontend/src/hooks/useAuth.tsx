@@ -1,66 +1,83 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { api } from '../api/client';
+import { Profile, RegisterPayload, Session } from '../api/types';
 
-export type UserRole = 'applicant' | 'admin' | null;
-
-export interface UserProfile {
-  role: UserRole;
-  name: string;
-  email: string;
-  category?: string;
-  officerDesignation?: string;
-}
+export type { Profile, UserRole } from '../api/types';
 
 interface AuthContextType {
-  user: UserProfile | null;
+  /** The signed-in account, or null when nobody is signed in. */
+  user: Profile | null;
   isAdmin: boolean;
   isApplicant: boolean;
-  loginPortal: (name: string, email: string, secret?: string) => Promise<void>;
+  /** True while the stored session is being revalidated against the API. */
+  isRestoring: boolean;
+  login: (email: string, password: string) => Promise<Profile>;
+  register: (payload: RegisterPayload) => Promise<Profile>;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-const USER_KEY = 'arohan_auth_user_v3';
-const ADMIN_EMAIL = 'motaofficer@gmail.com';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<UserProfile | null>(() => {
-    if (!localStorage.getItem('arohan_access_token_v1')) return null;
-    try {
-      const saved = localStorage.getItem(USER_KEY);
-      return saved ? JSON.parse(saved) as UserProfile : null;
-    } catch {
-      return null;
-    }
-  });
+  const [user, setUser] = useState<Profile | null>(null);
+  const [isRestoring, setIsRestoring] = useState<boolean>(api.hasToken());
 
+  // A stored token is only trusted after the API confirms it. The role always
+  // comes from the server response, never from the email address.
   useEffect(() => {
-    if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
-    else localStorage.removeItem(USER_KEY);
-  }, [user]);
+    let cancelled = false;
 
-  const loginPortal = async (name: string, email: string, secret = '') => {
-    const isAdmin = email.trim().toLowerCase() === ADMIN_EMAIL;
-    const result = await api.login({
-      role: isAdmin ? 'admin' : 'applicant',
-      email: email.trim(),
-      name: name.trim(),
-      ...(isAdmin ? { password: secret } : { otp: secret })
-    });
-    api.saveToken(result.access_token);
-    setUser({
-      role: result.role,
-      name: result.name,
-      email: result.email,
-      category: result.role === 'applicant' ? 'ST' : undefined,
-      officerDesignation: result.role === 'admin' ? 'Verification Officer (MoTA Desk)' : undefined
-    });
-  };
+    if (!api.hasToken()) {
+      setUser(null);
+      setIsRestoring(false);
+      return;
+    }
 
-  const logout = () => {
+    api
+      .getProfile()
+      .then((profile) => {
+        if (!cancelled) setUser(profile);
+      })
+      .catch(() => {
+        // Expired or revoked token: drop it so the portal returns to sign-in.
+        if (!cancelled) {
+          api.clearToken();
+          setUser(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsRestoring(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const establishSession = useCallback(async (session: Session) => {
+    api.saveToken(session.access_token);
+    const profile = await api.getProfile();
+    setUser(profile);
+    return profile;
+  }, []);
+
+  const login = useCallback(
+    async (email: string, password: string) => establishSession(await api.login({ email: email.trim(), password })),
+    [establishSession]
+  );
+
+  const register = useCallback(
+    async (payload: RegisterPayload) =>
+      establishSession(
+        await api.register({ ...payload, email: payload.email.trim(), full_name: payload.full_name.trim() })
+      ),
+    [establishSession]
+  );
+
+  const logout = useCallback(() => {
     api.clearToken();
     setUser(null);
-  };
+  }, []);
 
   return (
     <AuthContext.Provider
@@ -68,7 +85,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         isAdmin: user?.role === 'admin',
         isApplicant: user?.role === 'applicant',
-        loginPortal,
+        isRestoring,
+        login,
+        register,
         logout
       }}
     >

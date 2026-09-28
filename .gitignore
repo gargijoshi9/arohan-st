@@ -45,3 +45,6 @@ coverage/
 # Misc
 *.tgz
 .cache/
+
+# Local scratch design references
+/approach/

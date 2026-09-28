@@ -1,0 +1,24 @@
+============================================================================
+STATE BANK OF INDIA, BRANCH DIBRUGARH
+SCHOLARSHIP DISBURSEMENT ACCOUNT DETAILS / AADHAAR SEEDING PROOF
+============================================================================
+
+Account Holder Name:  PRIYA KUMARI DEB
+Guardian / Parent:    Jagannath Deb
+Account Number:       4102 5566 7788
+IFSC Code:             SBIN0DBR003
+Bank Name:             State Bank of India
+Branch:                Dibrugarh Main Branch, Assam
+Account Type:          Savings
+Aadhaar Number:        6677 1122 3344
+Mobile Number Linked:  9XXXXXXXXX
+Aadhaar Seeded Status: Seeded
+Bank Account Evidence Present: Yes
+DBT: Enabled
+
+Aadhaar has been seeded with this bank account for direct benefit transfer of
+scholarship instalments under the Ministry of Tribal Affairs schemes.
+
+Note: This is a sample document for interface testing. It is not an official
+record and confers no entitlement.
+============================================================================

@@ -1,5 +1,4 @@
 import json
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -9,6 +8,38 @@ from services.ocr_service import (
     parse_ocr_text,
     process_document_ocr,
 )
+
+
+def build_minimal_pdf() -> bytes:
+    """Return a one-page PDF whose text layer is a caste certificate line."""
+    text = "CASTE CERTIFICATE FOR SCHEDULED TRIBE (ST) Certificate No: ST/JH/2023/88921"
+    escaped = text.replace("\\", r"\\").replace("(", r"\(").replace(")", r"\)")
+    stream = f"BT /F1 12 Tf 40 780 Td ({escaped}) Tj ET".encode("ascii")
+
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R "
+        b"/Resources << /Font << /F1 5 0 R >> >> >>",
+        b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for number, body in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out += f"{number} 0 obj\n".encode() + body + b"\nendobj\n"
+
+    xref_at = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n".encode()
+    out += b"0000000000 65535 f \n"
+    for offset in offsets:
+        out += f"{offset:010d} 00000 n \n".encode()
+    out += (
+        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_at}\n%%EOF\n"
+    ).encode()
+    return bytes(out)
 
 
 class OCRServiceTests(unittest.TestCase):
@@ -59,7 +90,9 @@ class OCRServiceTests(unittest.TestCase):
             / "sample-documents"
             / "st_caste_certificate_sample.txt"
         )
-        result = process_document_ocr(str(sample), "caste_cert", "NFST")
+        # Uploads arrive as bytes held in GridFS, so the extractor takes content
+        # rather than a filesystem path.
+        result = process_document_ocr(sample.read_bytes(), "caste_cert", "NFST", sample.name)
         self.assertEqual(result["ocr_status"], "SUCCESS")
         self.assertEqual(result["parsed_fields"]["caste_certificate_no"], "ST/JH/2023/88921")
         self.assertIn("CASTE CERTIFICATE", result["extracted_text"])
@@ -67,12 +100,22 @@ class OCRServiceTests(unittest.TestCase):
         self.assertIsNone(result["ocr_confidence"])
 
     def test_unrecognized_required_fields_are_partial_for_officer_review(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            document = Path(temp_dir) / "income.txt"
-            document.write_text("A scanned-looking page with no income amount.", encoding="utf-8")
-            result = process_document_ocr(str(document), "income_cert")
+        result = process_document_ocr(
+            b"A scanned-looking page with no income amount.", "income_cert", "NFST", "income.txt"
+        )
         self.assertEqual(result["ocr_status"], "PARTIAL")
         self.assertEqual(result["parsed_fields"], {})
+        self.assertTrue(result["failed_reason"])
+
+    def test_pdf_bytes_are_read_through_pymupdf(self):
+        pdf = build_minimal_pdf()
+        result = process_document_ocr(pdf, "caste_cert", "NFST", "certificate.pdf")
+        self.assertEqual(result["ocr_status"], "SUCCESS")
+        self.assertIn("ST/JH/2023/88921", result["extracted_text"])
+
+    def test_corrupt_bytes_fail_without_raising(self):
+        result = process_document_ocr(b"not a real pdf", "caste_cert", "NFST", "broken.pdf")
+        self.assertEqual(result["ocr_status"], "FAILED")
         self.assertTrue(result["failed_reason"])
 
 
